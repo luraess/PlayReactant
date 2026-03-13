@@ -10,7 +10,7 @@ using PrettyChairmarks
     return
 end
 
-function main_react()
+function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
     D  = 1.0
 
@@ -34,13 +34,17 @@ function main_react()
     compute_react! = @compile sync=true compute!(T, D, dt, dx, dy, nt)
     compute_react!(T, D, dt, dx, dy, nt)
 
-    f = Figure()
-    ax = Axis(f[1, 1], aspect=DataAspect())
-    hm = heatmap!(ax, xc, yc, convert(Array, T); colormap = :turbo, colorrange = (0, 1))
-    Colorbar(f[1, 2], hm)
-    display(f)
+    if plt
+        f = Figure()
+        ax = Axis(f[1, 1], aspect=DataAspect())
+        hm = heatmap!(ax, xc, yc, convert(Array, T); colormap=:turbo, colorrange=(0, 1))
+        Colorbar(f[1, 2], hm)
+        display(f)
+    else
+        println("max(T) = $maximum(abs, convert(Array, T)")
+    end
 
     return @bs compute_react!(T, D, dt, dx, dy, nt)
 end
 
-main_react()
+main_react(; plt=false)
