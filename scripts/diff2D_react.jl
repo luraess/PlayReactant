@@ -14,7 +14,7 @@ function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
     D  = 1.0
 
-    nx = ny = 64
+    nx = ny = 512
     nt = 100
 
     dx, dy = Lx / nx, Ly / ny
@@ -41,7 +41,7 @@ function main_react(; plt=false)
         Colorbar(f[1, 2], hm)
         display(f)
     else
-        println("max(T) = $maximum(abs, convert(Array, T)")
+        println("max(T) = $(maximum(abs, convert(Array, T)))")
     end
 
     return @bs compute_react!(T, D, dt, dx, dy, nt)
