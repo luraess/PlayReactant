@@ -4,6 +4,8 @@ import CUDA
 using CairoMakie
 using PrettyChairmarks
 
+Reactant.set_default_backend("gpu")
+
 @kernel inbounds = true function diffusion_kernel!(T2, T, D, dt, dx, dy)
     ix, iy = @index(Global, NTuple)
     if (ix > 1 && ix < size(T, 1)) && (iy > 1 && iy < size(T, 2))
@@ -22,7 +24,7 @@ function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
     D = 1.0
 
-    nx = ny = 512
+    nx = ny = 1024
     nt = 100
 
     dx, dy = Lx / nx, Ly / ny
