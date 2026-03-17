@@ -3,8 +3,10 @@ using KernelAbstractions
 import CUDA
 using CairoMakie
 using PrettyChairmarks
+using Preferences, UUIDs
 
 Reactant.set_default_backend("gpu")
+Preferences.set_preferences!(UUID("3c362404-f566-11ee-1572-e11a4b42c853"), "xla_runtime" => "IFRT")
 
 @kernel inbounds = true function diffusion_kernel!(T2, T, D, dt, dx, dy)
     ix, iy = @index(Global, NTuple)
@@ -24,14 +26,18 @@ function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
     D = 1.0
 
-    nx = ny = 1024
+    nx = ny = 2048
     nt = 100
+
+    axis = (:x, :y)
+    mesh = Sharding.Mesh(reshape(Reactant.devices()[1:4], 2, 2), axis)
 
     dx, dy = Lx / nx, Ly / ny
     dt = min(dx, dy)^2 / D / 4.1
     xc, yc = LinRange(dx / 2, Lx - dx / 2, nx), LinRange(dy / 2, Ly - dy / 2, ny)
 
-    T = Reactant.ConcreteRArray(@. exp(-(xc - Lx / 2)^2 - (yc' - Ly / 2)^2))
+    # T = Reactant.ConcreteRArray(@. exp(-(xc - Lx / 2)^2 - (yc' - Ly / 2)^2))
+    T  = Reactant.ConcreteRArray(@. exp(-(xc - Lx/2)^2 - (yc' - Ly/2)^2); sharding=Sharding.NamedSharding(mesh, axis))
     T2 = copy(T)
 
     function compute!(T2, T, D, dt, dx, dy, nt)
