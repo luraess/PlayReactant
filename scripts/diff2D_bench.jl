@@ -3,7 +3,7 @@ using KernelAbstractions
 const KA = KernelAbstractions
 import CUDA
 using CairoMakie
-using PrettyChairmarks
+using Chairmarks
 
 # Move a host array to the target backend
 to_device(A, use_cuda::Bool) = use_cuda ? CUDA.CuArray(A) : A
@@ -42,31 +42,29 @@ end
     end
 end
 
-function diffusion_step_ka!(T2, T, D, dt, dx, dy)
-    backend = KA.get_backend(T)
-    diffusion_kernel!(backend, 256, size(T))(T2, T, D, dt, dx, dy)
-    return
-end
-
 function compute_ka!(T2, T, D, dt, dx, dy, nt)
+    backend = KA.get_backend(T)
     @trace for it = 1:nt
-        diffusion_step_ka!(T2, T, D, dt, dx, dy)
+        diffusion_kernel!(backend, 256, size(T))(T2, T, D, dt, dx, dy)
         copyto!(T, T2)
     end
+    KA.synchronize(backend)
     return
 end
 
 function compute_ka_plain!(T2, T, D, dt, dx, dy, nt)
+    backend = KA.get_backend(T)
     for it = 1:nt
-        diffusion_step_ka!(T2, T, D, dt, dx, dy)
+        diffusion_kernel!(backend, 256, size(T))(T2, T, D, dt, dx, dy)
         copyto!(T, T2)
     end
+    KA.synchronize(backend)
     return
 end
 
 # ---- Setup ----
 
-function main(; nx=4*1024, ny=4*1024, nt=10, use_cuda::Bool=CUDA.functional())
+function bench(; nx=4*1024, ny=4*1024, nt=10, use_cuda::Bool=CUDA.functional())
     use_cuda ? Reactant.set_default_backend("gpu") : Reactant.set_default_backend("cpu")
     use_cuda && !CUDA.functional() && error("use_cuda=true requested but no functional CUDA device found")
     Lx, Ly = 10.0, 10.0
@@ -108,18 +106,18 @@ function main(; nx=4*1024, ny=4*1024, nt=10, use_cuda::Bool=CUDA.functional())
     println("\n--- Benchmark (nx=$nx, ny=$ny, nt=$nt) ---")
 
     print("\nBroadcast plain:         ")
-    display(@bs compute_bc_plain!(T_bc_plain, D, dt, dx, dy, nt))
+    display(@b compute_bc_plain!(T_bc_plain, D, dt, dx, dy, nt))
 
     print("\nKA kernels plain:        ")
-    display(@bs compute_ka_plain!(T2_ka_plain, T_ka_plain, D, dt, dx, dy, nt))
+    display(@b compute_ka_plain!(T2_ka_plain, T_ka_plain, D, dt, dx, dy, nt))
 
     print("\nBroadcast Reactant:      ")
-    display(@bs compute_bc_react!(T_bc, D, dt, dx, dy, nt))
+    display(@b compute_bc_react!(T_bc, D, dt, dx, dy, nt))
 
     print("\nKA kernels Reactant:     ")
-    display(@bs compute_ka_react!(T2_ka, T_ka, D, dt, dx, dy, nt))
+    display(@b compute_ka_react!(T2_ka, T_ka, D, dt, dx, dy, nt))
 
     return
 end
 
-main(; nx=4*1024, ny=4*1024)
+bench(; nx=16*1024, ny=16*1024)
