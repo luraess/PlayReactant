@@ -2,7 +2,7 @@ using Reactant
 using CairoMakie
 using PrettyChairmarks
 
-Reactant.set_default_backend("gpu")
+Reactant.set_default_backend("cpu")
 
 @views Lapl(A, dx, dy) = (A[3:end, 2:end-1] .- 2.0 .* A[2:end-1, 2:end-1] .+ A[1:end-2, 2:end-1]) ./ dx^2 .+
                          (A[2:end-1, 3:end] .- 2.0 .* A[2:end-1, 2:end-1] .+ A[2:end-1, 1:end-2]) ./ dy^2
@@ -14,16 +14,16 @@ end
 
 function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
-    D  = 1.0
+    D = 1.0
 
-    nx = ny = 1024
-    nt = 100
+    nx = ny = 4 * 1024
+    nt = 10
 
     dx, dy = Lx / nx, Ly / ny
     dt = min(dx, dy)^2 / D / 4.1
-    xc, yc = LinRange(dx/2, Lx-dx/2, nx), LinRange(dy/2, Ly-dy/2, ny)
+    xc, yc = LinRange(dx / 2, Lx - dx / 2, nx), LinRange(dy / 2, Ly - dy / 2, ny)
 
-    T  = Reactant.ConcreteRArray(@. exp(-(xc - Lx/2)^2 - (yc' - Ly/2)^2))
+    T = Reactant.ConcreteRArray(@. exp(-(xc - Lx / 2)^2 - (yc' - Ly / 2)^2))
 
     function compute!(T, D, dt, dx, dy, nt)
         @trace for it = 1:nt
@@ -33,7 +33,7 @@ function main_react(; plt=false)
         return
     end
 
-    compute_react! = @compile sync=true compute!(T, D, dt, dx, dy, nt)
+    compute_react! = @compile sync = true compute!(T, D, dt, dx, dy, nt)
     compute_react!(T, D, dt, dx, dy, nt)
 
     if plt

@@ -1,10 +1,11 @@
 using Reactant
 using KernelAbstractions
+const KA = KernelAbstractions
 import CUDA
 using CairoMakie
 using PrettyChairmarks
 
-Reactant.set_default_backend("gpu")
+Reactant.set_default_backend("cpu")
 
 @kernel inbounds = true function diffusion_kernel!(T2, T, D, dt, dx, dy)
     ix, iy = @index(Global, NTuple)
@@ -15,7 +16,7 @@ Reactant.set_default_backend("gpu")
 end
 
 function diffusion_step!(T2, T, D, dt, dx, dy)
-    backend = KernelAbstractions.get_backend(T)
+    backend = KA.get_backend(T)
     diffusion_kernel!(backend, 256, size(T))(T2, T, D, dt, dx, dy)
     return
 end
@@ -24,8 +25,8 @@ function main_react(; plt=false)
     Lx, Ly = 10.0, 10.0
     D = 1.0
 
-    nx = ny = 1024
-    nt = 100
+    nx = ny = 4 * 1024
+    nt = 10
 
     dx, dy = Lx / nx, Ly / ny
     dt = min(dx, dy)^2 / D / 4.1
@@ -38,14 +39,15 @@ function main_react(; plt=false)
         @trace for it = 1:nt
             # println("step $it")
             diffusion_step!(T2, T, D, dt, dx, dy)
-            copyto!(T, T2) # T, T2 = T2, T seems not ideal in Reactant
+            copyto!(T, T2)
+            # T, T2 = T2, T
         end
         return
     end
-    Reactant.with_profiler("./kernel/") do
+    # Reactant.with_profiler("./prof/") do
         compute_react! = @compile sync = true raise = true compute!(T2, T, D, dt, dx, dy, nt)
         compute_react!(T2, T, D, dt, dx, dy, nt)
-    end
+    # end
 
     if plt
         f = Figure()
@@ -57,7 +59,7 @@ function main_react(; plt=false)
         println("max(T) = $(maximum(abs, convert(Array, T)))")
     end
 
-    return #@bs compute_react!(T2, T, D, dt, dx, dy, nt)
+    return @bs compute_react!(T2, T, D, dt, dx, dy, nt)
 end
 
 main_react(; plt=false)
