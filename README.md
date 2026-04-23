@@ -3,7 +3,7 @@ Checking out Reactant.jl
 
 ## Benchmarking
 
-Results from running [scrtipts/diff2D_bench.jl](scrtipts/diff2D_bench.jl) on an Nvidia GH200 (Alps)
+Results from running [scripts/diff2D_bench.jl](scripts/diff2D_bench.jl) on an Nvidia GH200 (Alps)
 
 ```
 julia> include("scripts/diff2D_bench.jl")
