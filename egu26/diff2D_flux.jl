@@ -5,6 +5,9 @@ import CUDA
 using Reactant
 using Chairmarks
 
+# sizeof is unreliable for sharded/Reactant arrays — use length × element size instead
+nbytes(A) = length(A) * sizeof(eltype(A))
+
 @kernel inbounds = true function update_q!(qx, qy, H, λ, dx, dy)
     ix, iy = @index(Global, NTuple)
     nx, ny = size(H)
@@ -122,15 +125,15 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
     end
 
     # --- report ---
-    A_eff = (3 * sizeof(H_ka) + 2 * (sizeof(qx_ka) + sizeof(qy_ka))) * 1e-9 * nt
+    A_eff = (3 * nbytes(H_ka) + 2 * (nbytes(qx_ka) + nbytes(qy_ka))) * 1e-9 * nt
     println("\n--- Benchmark (nx=$nx, ny=$ny, nt=$nt) ---")
-    println("KA plain       time loop: Teff = $(round(A_eff / bm_ka.time,  digits=2)) GB/s")
-    println("Reactant KA    time loop: Teff = $(round(A_eff / bm_r.time,   digits=2)) GB/s")
-    println("Reactant bcast time loop: Teff = $(round(A_eff / bm_rb.time,  digits=2)) GB/s")
+    println("KA plain       time loop: Teff = $(round(A_eff / bm_ka.time,  digits=2)) GB/s  |  $bm_ka")
+    println("Reactant KA    time loop: Teff = $(round(A_eff / bm_r.time,   digits=2)) GB/s  |  $bm_r")
+    println("Reactant bcast time loop: Teff = $(round(A_eff / bm_rb.time,  digits=2)) GB/s  |  $bm_rb")
 
     return
 end
 
-res = 32 * 1024
+res = 16 * 1024
 # runme(; nx=res, ny=res, use_cuda=false)
 runme(; nx=res, ny=res, nt=10, use_cuda=true)
