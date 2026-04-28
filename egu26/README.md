@@ -14,7 +14,7 @@ res = 64
 runme(; nx=res, ny=res, nt=50, use_cuda=true)
 ```
 
-![2D diffusion output — KA plain (top), Reactant KA (middle), Reactant bcast (bottom)](output.png)
+<img src="output.png" width="300" alt="2D diffusion output — KA plain (top), Reactant KA (middle), Reactant bcast (bottom)"/>
 
 > **Note:** KA plain and Reactant bcast agree; Reactant KA yields incorrect, asymmetric results.
 
