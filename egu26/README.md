@@ -56,6 +56,6 @@ CUDA GPU (H100), `nt = 10`, Reactant bcast:
 |    1 | `diff2D_flux.jl`        | 16384 × 16384   | 16384 × 16384   |     2945.88 |
 |    4 | `diff2D_flux_shard.jl`  | 16384 × 16384   | 32768 × 32768   |     2408.40 |
 
-**Parallel efficiency:** $\eta = 2408.40 / 2945.88 \approx 81.7\%$
+**Parallel efficiency:** E_par = 2408.40 / 2945.88 ≈ 81.7 %
 
 The ~18 % overhead at 4 GPUs reflects inter-device communication at shard boundaries and XLA collective overhead.
