@@ -29,8 +29,8 @@ CUDA GPU (H100), `nx = ny = 16384`, `nt = 10`:
 
 | Backend        | Teff (GB/s) |
 |----------------|------------:|
-| KA plain       |      272.55 |
-| Reactant KA    |      143.44 |
-| Reactant bcast |      251.56 |
+| KA plain       |     2727.63 |
+| Reactant KA    |     1432.61 |
+| Reactant bcast |     2524.55 |
 
 KA plain reaches peak measured throughput. Reactant bcast is close (~92 %), while Reactant KA currently sits at ~53 %, likely related to the same compilation issue causing the correctness problem above.

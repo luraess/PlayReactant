@@ -122,7 +122,7 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
     end
 
     # --- report ---
-    A_eff = 2 * (sizeof(H_ka) + sizeof(qx_ka) + sizeof(qy_ka)) * 1e-9
+    A_eff = 2 * (sizeof(H_ka) + sizeof(qx_ka) + sizeof(qy_ka)) * 1e-9 * nt
     println("\n--- Benchmark (nx=$nx, ny=$ny, nt=$nt) ---")
     println("KA plain       time loop: Teff = $(round(A_eff / bm_ka.time,  digits=2)) GB/s")
     println("Reactant KA    time loop: Teff = $(round(A_eff / bm_r.time,   digits=2)) GB/s")
