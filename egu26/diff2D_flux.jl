@@ -55,7 +55,7 @@ end
 
 to_device(A, use_cuda::Bool) = use_cuda ? CUDA.CuArray(A) : A
 
-function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functional())
+function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functional(), do_plot::Bool=false)
     use_cuda && !CUDA.functional() && error("use_cuda=true requested but no functional CUDA device found")
     use_cuda ? Reactant.set_default_backend("gpu") : Reactant.set_default_backend("cpu")
     backend = use_cuda ? CUDA.CUDABackend() : CPU()
@@ -99,7 +99,7 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
     qx_rb = Reactant.ConcreteRArray(zeros(dtype, nx + 1, ny))
     qy_rb = Reactant.ConcreteRArray(zeros(dtype, nx, ny + 1))
 
-    compute_react_bcast! = @compile sync=true raise=true time_loop_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
+    compute_react_bcast! = @compile sync=true time_loop_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
     compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
     println("Reactant bcast: max(H) = $(maximum(abs, convert(Array, H_rb)))")
     P_rb = convert(Array, H_rb)
@@ -107,17 +107,19 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
     bm_rb = @b compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
 
     # --- plot ---
-    # fig = Figure(size=(300, 700))
-    # ax1 = Axis(fig[1, 1]; title="KA plain",       aspect=DataAspect())
-    # ax2 = Axis(fig[2, 1]; title="Reactant KA",    aspect=DataAspect())
-    # ax3 = Axis(fig[3, 1]; title="Reactant bcast", aspect=DataAspect())
-    # hm1 = heatmap!(ax1, coord.x, coord.y, P_KA; colorrange=(0, .8))
-    # hm2 = heatmap!(ax2, coord.x, coord.y, P_re;  colorrange=(0, .8))
-    # hm3 = heatmap!(ax3, coord.x, coord.y, P_rb;  colorrange=(0, .8))
-    # Colorbar(fig[1, 2], hm1)
-    # Colorbar(fig[2, 2], hm2)
-    # Colorbar(fig[3, 2], hm3)
-    # save("output.png", fig)
+    if do_plot
+        fig = Figure(size=(300, 700))
+        ax1 = Axis(fig[1, 1]; title="KA plain",       aspect=DataAspect())
+        ax2 = Axis(fig[2, 1]; title="Reactant KA",    aspect=DataAspect())
+        ax3 = Axis(fig[3, 1]; title="Reactant bcast", aspect=DataAspect())
+        hm1 = heatmap!(ax1, coord.x, coord.y, P_KA; colorrange=(0, .8))
+        hm2 = heatmap!(ax2, coord.x, coord.y, P_re;  colorrange=(0, .8))
+        hm3 = heatmap!(ax3, coord.x, coord.y, P_rb;  colorrange=(0, .8))
+        Colorbar(fig[1, 2], hm1)
+        Colorbar(fig[2, 2], hm2)
+        Colorbar(fig[3, 2], hm3)
+        save("output.png", fig)
+    end
 
     # --- report ---
     A_eff = 2 * (sizeof(H_ka) + sizeof(qx_ka) + sizeof(qy_ka)) * 1e-9
