@@ -130,11 +130,11 @@ function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev
     # Use a fixed number of repetitions so all processes stay in sync.
     # Chairmarks @b decides iterations adaptively per-process which desynchronises
     # the distributed collective and causes shutdown-barrier timeouts.
-    nrep = 5
+    nrep = 1
     t_start = time_ns()
-    for _ in 1:nrep
+    # for _ in 1:nrep
         compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
-    end
+    # end
     t_s = (time_ns() - t_start) * 1e-9 / nrep
 
     # ---- Plot ----
