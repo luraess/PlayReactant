@@ -93,7 +93,9 @@ export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
 # Avoid XLA collective timeouts
 export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
 export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
-export XLA_REACTANT_GPU_MEM_FRACTION=0.9
+# Leave headroom for collective scratch buffers and rematerialization (especially at 16+ GPUs)
+export XLA_REACTANT_GPU_MEM_FRACTION=0.75
+export XLA_FLAGS="--xla_gpu_memory_limit_slop_factor=95 \${XLA_FLAGS}"
 
 # Ensure Julia's bundled OpenSSL is found before system OpenSSL
 # export LD_LIBRARY_PATH="/capstor/scratch/cscs/lraess/julia_local/artifacts/bae3e8f87928cd4450404cb879640f42e960d065/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"

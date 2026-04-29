@@ -2,7 +2,6 @@ using Reactant
 using KernelAbstractions
 const KA = KernelAbstractions
 using CairoMakie
-using Chairmarks
 import CUDA
 using Preferences, UUIDs
 
@@ -21,7 +20,7 @@ function is_distributed_env_present()
 end
 
 function reactant_initialize(; backend=CUDA.functional() ? "gpu" : "cpu")
-    is_distributed_env_present() && Reactant.Distributed.initialize() # may need to be commented if running on single node interactively
+    is_distributed_env_present() && Reactant.Distributed.initialize(; single_gpu_per_process=false)
     Reactant.set_default_backend(backend)
     @info "Backend: $backend"
     return
@@ -128,7 +127,15 @@ function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev
     println("Reactant bcast (sharded $Ndev GPUs): max(H) = $(maximum(abs, convert(Array, H_rb)))")
     do_plot && (P_rb = convert(Array, H_rb))
 
-    bm_rb = @b compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
+    # Use a fixed number of repetitions so all processes stay in sync.
+    # Chairmarks @b decides iterations adaptively per-process which desynchronises
+    # the distributed collective and causes shutdown-barrier timeouts.
+    nrep = 5
+    t_start = time_ns()
+    for _ in 1:nrep
+        compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
+    end
+    t_s = (time_ns() - t_start) * 1e-9 / nrep
 
     # ---- Plot ----
     if do_plot
@@ -144,10 +151,14 @@ function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev
     A_eff = 2 * (nbytes(H_rb) + nbytes(qx_rb) + nbytes(qy_rb)) * 1e-9 * nt / Ndev
     println("\n--- Benchmark (local=$(nx)×$(ny), global=$(Nx)×$(Ny), nt=$nt, Ndev=$Ndev) ---")
     # println("Reactant KA    ($Ndev GPU$(Ndev > 1 ? "s" : "")): Teff = $(round(A_eff / bm_r.time,  digits=2)) GB/s  |  $bm_r")
-    println("Reactant bcast ($Ndev GPU$(Ndev > 1 ? "s" : "")): Teff = $(round(A_eff / bm_rb.time, digits=2)) GB/s  |  $bm_rb")
+    println("Reactant bcast ($Ndev GPU$(Ndev > 1 ? "s" : "")): Teff = $(round(A_eff / t_s, digits=2)) GB/s  |  t=$t_s s (mean of $nrep runs)")
 
     return
 end
 
-res = 16 * 1024
+# nx/ny are the LOCAL (per-device) grid size.
+# At res=16384, global grid = res*sqrt(Ndev) per side.
+# With 16 GPUs (4×4 mesh) that is 65536² @ Float64 ≈ 32 GiB for H alone —
+# reduce res if XLA rematerialization warnings appear (near-OOM on 80 GiB devices).
+res = 8 * 1024
 runme(; nx=res, ny=res, nt=10, do_plot=false)
