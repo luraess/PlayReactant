@@ -7,8 +7,25 @@ import CUDA
 using Preferences, UUIDs
 
 # Use IFRT runtime (required for multi-device / sharding)
-Reactant.set_default_backend("gpu")
 Preferences.set_preferences!(UUID("3c362404-f566-11ee-1572-e11a4b42c853"), "xla_runtime" => "IFRT")
+
+# Distributed init — mirrors GB-25 `initialize` + `is_distributed_env_present`
+function is_distributed_env_present()
+    detector_list = [
+        Reactant.Distributed.SlurmEnvDetector(),
+        Reactant.Distributed.OpenMPIORTEEnvDetector(),
+        Reactant.Distributed.MPIEnvDetector(),
+        Reactant.Distributed.OpenMPIPMIXEnvDetector(),
+    ]
+    return !isnothing(findfirst(Reactant.Distributed.is_env_present, detector_list))
+end
+
+function reactant_initialize(; backend=CUDA.functional() ? "gpu" : "cpu")
+    is_distributed_env_present() && Reactant.Distributed.initialize() # may need to be commented if running on single node interactively
+    Reactant.set_default_backend(backend)
+    @info "Backend: $backend"
+    return
+end
 
 # sizeof is unreliable for sharded ConcreteRArrays — use length × element size instead
 nbytes(A) = length(A) * sizeof(eltype(A))
@@ -62,10 +79,8 @@ end
 
 # Main — nx, ny are the LOCAL (per-device) grid sizes;
 #        the global grid is (nx*Dx) × (ny*Dy) and is sharded across Dx×Dy devices.
-function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev::Union{Int,Nothing}=nothing)
-    !CUDA.functional() && error("No functional CUDA device found")
-    # Reactant.set_default_backend("gpu")
-    println("Backend: CUDA GPU")
+function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev::Union{Int,Nothing}=nothing, backend=CUDA.functional() ? "gpu" : "cpu")
+    reactant_initialize(; backend)
 
     Ndev = isnothing(ndev) ? length(Reactant.devices()) : ndev
     Dx, Dy = mesh_factors(Ndev)
