@@ -1,8 +1,10 @@
 using Reactant
+using Reactant: CompileOptions
 using KernelAbstractions
 const KA = KernelAbstractions
 using CairoMakie
 import CUDA
+using Libdl: dllist
 using Preferences, UUIDs
 
 # Use IFRT runtime (required for multi-device / sharding)
@@ -37,41 +39,56 @@ function mesh_factors(N::Int)
 end
 
 # KA kernels (flux-based)
+@kernel inbounds = true function update_qx!(qx, H, λ, dx)
+    ix, iy = @index(Global, NTuple)
+    qx[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix, iy+1]) / dx
+end
+
+@kernel inbounds = true function update_qy!(qy, H, λ, dy)
+    ix, iy = @index(Global, NTuple)
+    qy[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix+1, iy]) / dy
+end
+
 @kernel inbounds = true function update_q!(qx, qy, H, λ, dx, dy)
     ix, iy = @index(Global, NTuple)
     nx, ny = size(H)
-    if ix < nx qx[ix+1, iy  ] = -λ * (H[ix+1, iy] - H[ix, iy]) / dx end
-    if iy < ny qy[ix,   iy+1] = -λ * (H[ix, iy+1] - H[ix, iy]) / dy end
+    if ix <= nx - 1 && iy <= ny - 2 qx[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix, iy+1]) / dx end
+    if ix <= nx - 2 && iy <= ny - 1 qy[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix+1, iy]) / dy end
 end
 
 @kernel inbounds = true function update_H!(H, qx, qy, dt, dx, dy)
     ix, iy = @index(Global, NTuple)
-    H[ix, iy] -= dt * ((qx[ix+1, iy] - qx[ix, iy]) / dx +
-                       (qy[ix, iy+1] - qy[ix, iy]) / dy)
+    H[ix+1, iy+1] -= dt * ((qx[ix+1, iy] - qx[ix, iy]) / dx +
+                           (qy[ix, iy+1] - qy[ix, iy]) / dy)
 end
 
-function diffusion_step!(backend, H, qx, qy, λ, dt, dx, dy)
-    nx, ny = size(H)
-    update_q!(backend, 256, (nx, ny))(qx, qy, H, λ, dx, dy)
-    update_H!(backend, 256, (nx, ny))(H, qx, qy, dt, dx, dy)
+function diffusion_step_ka!(backend, H, qx, qy, λ, dt, dx, dy)
+    update_qx!(backend, 256, size(qx))(qx, H, λ, dx)
+    update_qy!(backend, 256, size(qy))(qy, H, λ, dy)
+    update_H!(backend, 256, size(H) .- 2)(H, qx, qy, dt, dx, dy)
     return
 end
 
 function time_loop_react!(H, qx, qy, λ, dt, dx, dy, nt)
     backend = KA.get_backend(H)
     @trace for _ in 1:nt
-        diffusion_step!(backend, H, qx, qy, λ, dt, dx, dy)
+        diffusion_step_ka!(backend, H, qx, qy, λ, dt, dx, dy)
     end
     KA.synchronize(backend)
     return
 end
 
+function diffusion_step!(H, qx, qy, λ, dt, dx, dy)
+    qx .= .-λ .* (H[2:end, 2:end-1] .- H[1:end-1, 2:end-1]) ./ dx
+    qy .= .-λ .* (H[2:end-1, 2:end] .- H[2:end-1, 1:end-1]) ./ dy
+    H[2:end-1, 2:end-1] .-= dt .* ((qx[2:end, :] .- qx[1:end-1, :]) ./ dx .+
+                                   (qy[:, 2:end] .- qy[:, 1:end-1]) ./ dy)
+    return
+end
+
 function time_loop_react_bcast!(H, qx, qy, λ, dt, dx, dy, nt)
     @trace for _ in 1:nt
-        qx[2:end-1, :] .= .-λ .* (H[2:end, :] .- H[1:end-1, :]) ./ dx
-        qy[:, 2:end-1] .= .-λ .* (H[:, 2:end] .- H[:, 1:end-1]) ./ dy
-        H .-= dt .* ((qx[2:end, :] .- qx[1:end-1, :]) ./ dx .+
-                     (qy[:, 2:end] .- qy[:, 1:end-1]) ./ dy)
+        diffusion_step!(H, qx, qy, λ, dt, dx, dy)
     end
     return
 end
@@ -80,6 +97,8 @@ end
 #        the global grid is (nx*Dx) × (ny*Dy) and is sharded across Dx×Dy devices.
 function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev::Union{Int,Nothing}=nothing, backend=CUDA.functional() ? "gpu" : "cpu")
     reactant_initialize(; backend)
+    @show filter(contains("nccl"), dllist())
+    rank = Reactant.Distributed.local_rank()
 
     Ndev = isnothing(ndev) ? length(Reactant.devices()) : ndev
     Dx, Dy = mesh_factors(Ndev)
@@ -106,59 +125,68 @@ function runme(; nx=512, ny=512, nt=10, dtype=Float64, do_plot::Bool=false, ndev
     shard   = Sharding.NamedSharding(mesh, axis)
 
     # ---- Sharded Reactant KA ----
-    # H_r  = Reactant.ConcreteRArray(convert(Array{dtype}, copy(H0)); sharding=shard)
-    # qx_r = Reactant.ConcreteRArray(zeros(dtype, Nx + 1, Ny); sharding=shard)
-    # qy_r = Reactant.ConcreteRArray(zeros(dtype, Nx, Ny + 1); sharding=shard)
+    H_r  = Reactant.ConcreteRArray(convert(Array{dtype}, copy(H0)); sharding=shard)
+    qx_r = Reactant.ConcreteRArray(zeros(dtype, Nx - 1, Ny - 2); sharding=shard)
+    qy_r = Reactant.ConcreteRArray(zeros(dtype, Nx - 2, Ny - 1); sharding=shard)
 
-    # compute_react! = @compile sync=true raise=true time_loop_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
-    # compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
-    # println("Reactant KA    (sharded $Ndev GPUs): max(H) = $(maximum(abs, convert(Array, H_r)))")
-    # do_plot && (P_r = convert(Array, H_r))
+    compute_react! = @compile compile_options=CompileOptions(; sync=true, raise=true, strip_llvm_debuginfo=true, strip=:all) time_loop_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
+    compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
+    rank == 0 && println("Reactant KA    (sharded $Ndev GPUs): max(H) = $(maximum(abs, convert(Array, H_r)))")
 
-    # bm_r = @b compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
+    do_plot && (P_r  = convert(Array, H_r))
 
     # ---- Sharded Reactant broadcast ----
     H_rb  = Reactant.ConcreteRArray(convert(Array{dtype}, copy(H0));  sharding=shard)
-    qx_rb = Reactant.ConcreteRArray(zeros(dtype, Nx + 1, Ny); sharding=shard)
-    qy_rb = Reactant.ConcreteRArray(zeros(dtype, Nx, Ny + 1); sharding=shard)
+    qx_rb = Reactant.ConcreteRArray(zeros(dtype, Nx - 1, Ny - 2); sharding=shard)
+    qy_rb = Reactant.ConcreteRArray(zeros(dtype, Nx - 2, Ny - 1); sharding=shard)
 
-    compute_react_bcast! = @compile sync=true time_loop_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
+    compute_react_bcast! = @compile compile_options=CompileOptions(; sync=true, strip_llvm_debuginfo=true, strip=:all) time_loop_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
     compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
-    println("Reactant bcast (sharded $Ndev GPUs): max(H) = $(maximum(abs, convert(Array, H_rb)))")
+    rank == 0 && println("Reactant bcast (sharded $Ndev GPUs): max(H) = $(maximum(abs, convert(Array, H_rb)))")
+
     do_plot && (P_rb = convert(Array, H_rb))
 
     # Use a fixed number of repetitions so all processes stay in sync.
-    # Chairmarks @b decides iterations adaptively per-process which desynchronises
-    # the distributed collective and causes shutdown-barrier timeouts.
-    nrep = 1
+    nrep = 5
+
+    # --- Benchmark KA path ---
     t_start = time_ns()
-    # for _ in 1:nrep
+    for _ in 1:nrep
+        compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
+    end
+    t_ka = (time_ns() - t_start) * 1e-9 / nrep
+
+    # --- Benchmark broadcast path ---
+    t_start = time_ns()
+    for _ in 1:nrep
         compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
-    # end
+    end
     t_s = (time_ns() - t_start) * 1e-9 / nrep
 
-    # ---- Plot ----
-    if do_plot
+    if do_plot && rank == 0
         fig = Figure(size=(300, 500))
         ax1 = Axis(fig[1, 1]; title="Reactant KA (sharded)",    aspect=DataAspect())
         ax2 = Axis(fig[2, 1]; title="Reactant bcast (sharded)", aspect=DataAspect())
-        # hm1 = heatmap!(ax1, coord.x, coord.y, P_r;  colorrange=(0, .8))
+        hm1 = heatmap!(ax1, coord.x, coord.y, P_r;  colorrange=(0, .8))
         hm2 = heatmap!(ax2, coord.x, coord.y, P_rb; colorrange=(0, .8))
-        # Colorbar(fig[1, 2], hm1)
+        Colorbar(fig[1, 2], hm1)
         Colorbar(fig[2, 2], hm2)
         save("output_shard.png", fig)
     end
+
     A_eff = 2 * (nbytes(H_rb) + nbytes(qx_rb) + nbytes(qy_rb)) * 1e-9 * nt / Ndev
-    println("\n--- Benchmark (local=$(nx)×$(ny), global=$(Nx)×$(Ny), nt=$nt, Ndev=$Ndev) ---")
-    # println("Reactant KA    ($Ndev GPU$(Ndev > 1 ? "s" : "")): Teff = $(round(A_eff / bm_r.time,  digits=2)) GB/s  |  $bm_r")
-    println("Reactant bcast ($Ndev GPU$(Ndev > 1 ? "s" : "")): Teff = $(round(A_eff / t_s, digits=2)) GB/s  |  t=$t_s s (mean of $nrep runs)")
+
+    # Only rank 0 reports: it times the full collective (slowest rank wins).
+    if rank == 0
+        gpu_s = Ndev > 1 ? "s" : ""
+        println("\n--- Benchmark (local=$(nx)×$(ny), global=$(Nx)×$(Ny), nt=$nt, Ndev=$Ndev) ---")
+        println("Reactant KA    ($Ndev GPU$(gpu_s)): Teff = $(round(A_eff / t_ka, digits=2)) GB/s  |  t=$t_ka s (mean of $nrep runs)")
+        println("Reactant bcast ($Ndev GPU$(gpu_s)): Teff = $(round(A_eff / t_s, digits=2)) GB/s  |  t=$t_s s (mean of $nrep runs)")
+    end
 
     return
 end
 
 # nx/ny are the LOCAL (per-device) grid size.
-# At res=16384, global grid = res*sqrt(Ndev) per side.
-# With 16 GPUs (4×4 mesh) that is 65536² @ Float64 ≈ 32 GiB for H alone —
-# reduce res if XLA rematerialization warnings appear (near-OOM on 80 GiB devices).
 res = 8 * 1024
 runme(; nx=res, ny=res, nt=10, do_plot=false)

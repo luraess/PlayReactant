@@ -24,7 +24,8 @@ run_postfix = get(ENV, "PLAYREACTANT_RUN_POSTFIX", randstring(4))
 
 # GPU counts to sweep — must be perfect squares (mesh_factors requires D*D == N)
 # and multiples of gpus_per_node.
-Ngpus = [4, 16, 64, 256]
+Ngpus = [4, 16]
+# Ngpus = [4, 16, 64, 256]
 
 for N in Ngpus
     isqrt(N)^2 == N        || error("Ngpus entry $N is not a perfect square")

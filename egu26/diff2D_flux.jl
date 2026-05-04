@@ -8,23 +8,41 @@ using Chairmarks
 # sizeof is unreliable for sharded/Reactant arrays — use length × element size instead
 nbytes(A) = length(A) * sizeof(eltype(A))
 
+@kernel inbounds = true function update_qx!(qx, H, λ, dx)
+    ix, iy = @index(Global, NTuple)
+    qx[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix, iy+1]) / dx
+end
+
+@kernel inbounds = true function update_qy!(qy, H, λ, dy)
+    ix, iy = @index(Global, NTuple)
+    qy[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix+1, iy]) / dy
+end
+
 @kernel inbounds = true function update_q!(qx, qy, H, λ, dx, dy)
     ix, iy = @index(Global, NTuple)
-    nx, ny = size(H)
-    if ix < nx qx[ix+1, iy  ] = -λ * (H[ix+1, iy] - H[ix, iy]) / dx end
-    if iy < ny qy[ix,   iy+1] = -λ * (H[ix, iy+1] - H[ix, iy]) / dy end
+    if ix <= size(qx, 1) && iy <= size(qx, 2) qx[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix, iy+1]) / dx end
+    if ix <= size(qy, 1) && iy <= size(qy, 2) qy[ix, iy] = -λ * (H[ix+1, iy+1] - H[ix+1, iy]) / dy end
 end
 
 @kernel inbounds = true function update_H!(H, qx, qy, dt, dx, dy)
     ix, iy = @index(Global, NTuple)
-    H[ix, iy] -= dt * ((qx[ix+1, iy] - qx[ix, iy]) / dx +
-                       (qy[ix, iy+1] - qy[ix, iy]) / dy)
+    H[ix+1, iy+1] -= dt * ((qx[ix+1, iy] - qx[ix, iy]) / dx +
+                           (qy[ix, iy+1] - qy[ix, iy]) / dy)
 end
 
 function diffusion_step!(backend, H, qx, qy, λ, dt, dx, dy)
-    nx, ny = size(H)
-    update_q!(backend, 256, (nx, ny))(qx, qy, H, λ, dx, dy)
-    update_H!(backend, 256, (nx, ny))(H, qx, qy, dt, dx, dy)
+    update_qx!(backend, 256, size(qx))(qx, H, λ, dx)
+    update_qy!(backend, 256, size(qy))(qy, H, λ, dy)
+    # update_q!(backend, 256, size(H))(qx, qy, H, λ, dx, dy)
+    update_H!(backend, 256, size(H) .- 2)(H, qx, qy, dt, dx, dy)
+    return
+end
+
+function diffusion_step!(H, qx, qy, λ, dt, dx, dy)
+    qx .= .-λ .* (H[2:end, 2:end-1] .- H[1:end-1, 2:end-1]) ./ dx
+    qy .= .-λ .* (H[2:end-1, 2:end] .- H[2:end-1, 1:end-1]) ./ dy
+    H[2:end-1, 2:end-1] .-= dt .* ((qx[2:end, :] .- qx[1:end-1, :]) ./ dx .+
+                                   (qy[:, 2:end] .- qy[:, 1:end-1]) ./ dy)
     return
 end
 
@@ -48,10 +66,7 @@ end
 
 function time_loop_react_bcast!(H, qx, qy, λ, dt, dx, dy, nt)
     @trace for it in 1:nt
-        qx[2:end-1, :] .= .-λ .* (H[2:end, :] .- H[1:end-1, :]) ./ dx
-        qy[:, 2:end-1] .= .-λ .* (H[:, 2:end] .- H[:, 1:end-1]) ./ dy
-        H .-= dt .* ((qx[2:end, :] .- qx[1:end-1, :]) ./ dx .+
-                     (qy[:, 2:end] .- qy[:, 1:end-1]) ./ dy)
+        diffusion_step!(H, qx, qy, λ, dt, dx, dy)
     end
     return
 end
@@ -76,8 +91,8 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
 
     # --- plain KA ---
     H_ka  = to_device(convert(Array{dtype}, copy(H0)), use_cuda)
-    qx_ka = KA.zeros(backend, dtype, nx + 1, ny)
-    qy_ka = KA.zeros(backend, dtype, nx, ny + 1)
+    qx_ka = KA.zeros(backend, dtype, nx - 1, ny - 2)
+    qy_ka = KA.zeros(backend, dtype, nx - 2, ny - 1)
 
     time_loop!(H_ka, qx_ka, qy_ka, λ, dt, dx, dy, nt)
     println("KA plain:       max(H) = $(maximum(abs, Array(H_ka)))")
@@ -87,20 +102,20 @@ function runme(; nx=64, ny=64, nt=10, dtype=Float64, use_cuda::Bool=CUDA.functio
 
     # --- Reactant ---
     H_r  = Reactant.ConcreteRArray(convert(Array{dtype}, copy(H0)))
-    qx_r = Reactant.ConcreteRArray(zeros(dtype, nx + 1, ny))
-    qy_r = Reactant.ConcreteRArray(zeros(dtype, nx, ny + 1))
+    qx_r = Reactant.ConcreteRArray(zeros(dtype, nx - 1, ny - 2))
+    qy_r = Reactant.ConcreteRArray(zeros(dtype, nx - 2, ny - 1))
 
     compute_react! = @compile sync=true raise=true time_loop_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
     compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
-    println("Reactant:       max(H) = $(maximum(abs, convert(Array, H_r)))")
+    println("Reactant KA:    max(H) = $(maximum(abs, convert(Array, H_r)))")
     P_re = convert(Array, H_r)
 
     bm_r = @b compute_react!(H_r, qx_r, qy_r, λ, dt, dx, dy, nt)
 
     # --- Reactant broadcast ---
     H_rb  = Reactant.ConcreteRArray(convert(Array{dtype}, copy(H0)))
-    qx_rb = Reactant.ConcreteRArray(zeros(dtype, nx + 1, ny))
-    qy_rb = Reactant.ConcreteRArray(zeros(dtype, nx, ny + 1))
+    qx_rb = Reactant.ConcreteRArray(zeros(dtype, nx - 1, ny -2))
+    qy_rb = Reactant.ConcreteRArray(zeros(dtype, nx - 2, ny - 1))
 
     compute_react_bcast! = @compile sync=true time_loop_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
     compute_react_bcast!(H_rb, qx_rb, qy_rb, λ, dt, dx, dy, nt)
@@ -136,4 +151,4 @@ end
 
 res = 16 * 1024
 # runme(; nx=res, ny=res, use_cuda=false)
-runme(; nx=res, ny=res, nt=10, use_cuda=true)
+runme(; nx=res, ny=res, nt=10, do_plot=false, use_cuda=true)
