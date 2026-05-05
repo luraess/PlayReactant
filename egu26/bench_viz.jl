@@ -1,10 +1,10 @@
 # Standalone visualisation for bench_sweep results.
 # Usage:
-#   julia --project egu26/bench_viz.jl                          # uses bench_sweep_results.toml next to this file
-#   BENCH_SWEEP_OUT=/path/to/results.toml julia --project egu26/bench_viz.jl
+#   julia --project bench_viz.jl                          # uses bench_sweep_results.toml next to this file
+#   BENCH_SWEEP_OUT=/path/to/results.toml julia --project bench_viz.jl
 using CairoMakie, TOML
 
-out_file = get(ENV, "BENCH_SWEEP_OUT", joinpath(@__DIR__, "bench_sweep_results.toml"))
+out_file = get(ENV, "BENCH_SWEEP_OUT", joinpath(@__DIR__, "output", "bench_sweep_results.toml"))
 isfile(out_file) || error("Results file not found: $out_file\nSet BENCH_SWEEP_OUT to point at your .toml")
 
 toml_data = TOML.parsefile(out_file)

@@ -6,16 +6,15 @@ Launches 4 independent Julia processes in parallel, each pinned to one GPU
 Results land in runs/<timestamp>_<tag>/gpu=<id>/<jobid>.out
 
 Usage:
-    julia --project egu26/bench_sweep_submit.jl
+    julia --project bench_sweep_submit.jl
 """
 
 using Dates, Random
 
-username      = ENV["USER"]
-account       = "c44"
-time_limit    = "01:00:00"
-gpus_per_node = 4
-submit        = true
+username   = ENV["USER"]
+account    = "c44"
+time_limit = "01:30:00"
+submit     = true
 
 out_dir    = @__DIR__
 run_prefix = get(ENV, "PLAYREACTANT_RUN_PREFIX",  "runs")
@@ -44,47 +43,11 @@ end
 
 @info "Output directory: $out_path"
 
-# ---- Per-GPU launcher scripts ------------------------------------------
-for gpu_id in 0:(gpus_per_node - 1)
-    gpu_dir = joinpath(out_path, "gpu=$gpu_id")
-    mkpath(gpu_dir)
-
-    launcher = joinpath(gpu_dir, "launcher.sh")
-    open(launcher, "w") do io
-        print(io, """
-#!/usr/bin/env sh
-
-export CUDA_VISIBLE_DEVICES=$gpu_id
-export TZ=UTC
-
-export JULIA_DEPOT_PATH=$(join(Base.DEPOT_PATH, ':'))
-
-export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
-export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
-export XLA_REACTANT_GPU_MEM_FRACTION=0.85
-unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
-
-exec "\${@}"
-""")
-    end
-    chmod(launcher, 0o755)
-end
-
-# ---- Single SLURM job that fans out to 4 GPUs -------------------------
-sbatch = joinpath(out_path, "submit.sh")
+# ---- Single SLURM job, 1 GPU ------------------------------------------
+sbatch    = joinpath(out_path, "submit.sh")
 julia_bin = Base.julia_cmd()[1]
 
 open(sbatch, "w") do io
-    # Build the 4 srun lines (one per GPU, all backgrounded then waited on)
-    srun_lines = join(["""
-    srun --cpu-bind=sockets --mem-bind=local --exclusive \\
-         --uenv="julia/25.5:v1" \\
-         --view=juliaup --preserve-env \\
-         $(out_path)/gpu=$gpu_id/launcher.sh \\
-         $julia_bin --project=$project_path --startup-file=no --threads=16 --compiled-modules=strict -O0 \\
-         $bench_file \\
-         > $(out_path)/gpu=$gpu_id/\${SLURM_JOB_ID}.out 2>&1 &""" for gpu_id in 0:(gpus_per_node - 1)], "\n")
-
     print(io, """
 #!/bin/bash -l
 
@@ -100,14 +63,21 @@ open(sbatch, "w") do io
 #SBATCH --account=$account
 #SBATCH --exclusive
 
-JULIA_CUDA_USE_COMPAT=false
+export JULIA_CUDA_USE_COMPAT=false
+export BENCH_BACKEND=gpu
+export BENCH_RES_S2D=64,128,256,512,1024,2048,4096,8192
+export BENCH_RES_S3D=32,64,128,256,512
+export BENCH_RES_PW2D=64,128,256,512,1024,2048,4096
+export BENCH_RES_PW3D=32,64,128,256,512
+export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
+export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
+export XLA_REACTANT_GPU_MEM_FRACTION=0.85
+unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
 ulimit -s unlimited
 ulimit -S -c0
 
-$srun_lines
-
-wait
-echo "All GPU benchmarks finished."
+$julia_bin --project=$project_path --startup-file=no --threads=16 --compiled-modules=strict -O0 \\
+    $bench_file
 """)
 end
 

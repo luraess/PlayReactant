@@ -19,10 +19,10 @@ backend = Symbol(get(ENV, "BENCH_BACKEND", "gpu"))  # :gpu | :tpu | :cpu
 do_viz  = get(ENV, "BENCH_VIZ", "0") == "1"        # set BENCH_VIZ=1 to produce figures
 
 _parse_res(env, default) = haskey(ENV, env) ? parse.(Int, split(ENV[env], ',')) : default
-res_s2d  = _parse_res("BENCH_RES_S2D",  [64, 128])#, 256, 512, 1024, 2048, 4096])
-res_s3d  = _parse_res("BENCH_RES_S3D",  [32, 64])#, 128, 256, 512])
-res_pw2d = _parse_res("BENCH_RES_PW2D", [64, 128])#, 256, 512, 1024, 2048])
-res_pw3d = _parse_res("BENCH_RES_PW3D", [32, 64])#, 128, 256, 512])
+res_s2d  = _parse_res("BENCH_RES_S2D",  [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096, 8192])
+res_s3d  = _parse_res("BENCH_RES_S3D",  [32, 64])#[32, 64, 128, 256, 512])
+res_pw2d = _parse_res("BENCH_RES_PW2D", [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096])
+res_pw3d = _parse_res("BENCH_RES_PW3D", [32, 64])#[32, 64, 128, 256, 512])
 
 # ─────────────────────────────────────────────────────────
 # Stokes 2D  (14 arrays per iteration, ~nx × ny each)
@@ -101,7 +101,9 @@ end
 # ─────────────────────────────────────────────────────────
 # Save results to TOML
 # ─────────────────────────────────────────────────────────
-out_file = get(ENV, "BENCH_SWEEP_OUT", joinpath(@__DIR__, "bench_sweep_results.toml"))
+_out_dir = get(ENV, "BENCH_SWEEP_OUTDIR", joinpath(@__DIR__, "output"))
+mkpath(_out_dir)
+out_file = get(ENV, "BENCH_SWEEP_OUT", joinpath(_out_dir, "bench_sweep_results.toml"))
 open(out_file, "w") do io
     println(io, "# bench_sweep results — $(string(Dates.now()))")
     println(io, "backend = \"$(string(backend))\"")
