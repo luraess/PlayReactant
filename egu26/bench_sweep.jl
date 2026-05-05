@@ -111,8 +111,8 @@ println("="^70)
 println("-"^70)
 all_results = [("Stokes2D",   results_s2d),
                ("Stokes3D",   results_s3d),
-               ("PorWaves2D", results_pw2d),
-               ("PorWaves3D", results_pw3d)]
+               ("Porowaves2D", results_pw2d),
+               ("Porowaves3D", results_pw3d)]
 for (label, results) in all_results
     for r in results
         @printf "%-20s %6d %12.2f %10.3f %8d %10.2f\n" label r.nx r.t_compile r.t_run r.niter r.T_eff

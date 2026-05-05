@@ -16,14 +16,26 @@ markers = [:circle, :rect, :diamond, :utriangle]
 solver_colors  = Dict(s => colors[i]  for (i, s) in enumerate(solvers))
 solver_markers = Dict(s => markers[i] for (i, s) in enumerate(solvers))
 
-fig = Figure(; size=(900, 700))
-ax_trun  = Axis(fig[1, 1]; xlabel="nx",     ylabel="t_run [s]",         title="Wall time",
-                xscale=log2, yscale=log10)
-ax_teff  = Axis(fig[1, 2]; xlabel="nx",     ylabel="T_eff [GB/s]",      title="Effective memory throughput",
-                xscale=log2)
-ax_niter = Axis(fig[2, 1]; xlabel="nx",     ylabel="niter",             title="Iterations to convergence",
-                xscale=log2)
-ax_comp  = Axis(fig[2, 2]; xlabel="solver", ylabel="min t_compile [s]", title="Min compile time")
+# collect all nx values that actually appear, for explicit tick labels
+all_nxs = sort(unique(r["nx"] for r in runs))
+_nx_ticks(axnxs) = (axnxs, string.(axnxs))
+
+fig = Figure(; size=(1000, 700))
+ax_trun  = Axis(fig[1, 1]; xlabel="nx", ylabel=L"t_\mathrm{run}\;[\mathrm{s}]",
+                title="Wall time",
+                xscale=log2, yscale=log10,
+                xticks=_nx_ticks(all_nxs))
+ax_teff  = Axis(fig[1, 2]; xlabel="nx", ylabel=L"T_\mathrm{eff}\;[\mathrm{GB/s}]",
+                title="Effective memory throughput",
+                xscale=log2,
+                xticks=_nx_ticks(all_nxs))
+ax_niter = Axis(fig[2, 1]; xlabel="nx", ylabel=L"\mathrm{n}_\mathrm{iter}",
+                title="Iterations to convergence",
+                xscale=log2,
+                xticks=_nx_ticks(all_nxs))
+ax_comp  = Axis(fig[2, 2]; xlabel="solver", ylabel=L"\min\,t_\mathrm{compile}\;[\mathrm{s}]",
+                title="Compile time",
+                xticklabelrotation=π/4, xticklabelalign=(:right, :center))
 
 for s in solvers
     sr    = filter(r -> r["solver"] == s, runs)
