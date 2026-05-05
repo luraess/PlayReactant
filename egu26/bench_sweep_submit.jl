@@ -63,16 +63,19 @@ open(sbatch, "w") do io
 #SBATCH --account=$account
 #SBATCH --exclusive
 
-export JULIA_CUDA_USE_COMPAT=false
 export BENCH_BACKEND=gpu
+export BENCH_SWEEP_OUT=$(out_path)/bench_sweep_results.toml
 export BENCH_RES_S2D=64,128,256,512,1024,2048,4096,8192
 export BENCH_RES_S3D=32,64,128,256,512
 export BENCH_RES_PW2D=64,128,256,512,1024,2048,4096
 export BENCH_RES_PW3D=32,64,128,256,512
+
+export JULIA_CUDA_USE_COMPAT=false
 export XLA_FLAGS="--xla_gpu_first_collective_call_warn_stuck_timeout_seconds=40 --xla_gpu_first_collective_call_terminate_timeout_seconds=80 \${XLA_FLAGS}"
 export XLA_FLAGS="--xla_disable_hlo_passes=host-offload-legalize,hlo_constant_splitter,multi_output_fusion \${XLA_FLAGS}"
 export XLA_REACTANT_GPU_MEM_FRACTION=0.85
 unset no_proxy http_proxy https_proxy NO_PROXY HTTP_PROXY HTTPS_PROXY
+
 ulimit -s unlimited
 ulimit -S -c0
 

@@ -1,9 +1,30 @@
 # Resolution sweep for all 4 Reactant physics solvers.
-# Run from the repo root: julia --project scripts/bench_sweep.jl
 #
-# Each script is wrapped in its own module to avoid namespace clashes.
-# The `_bench_sweep` flag suppresses the hardcoded main() call at the
-# bottom of each included script.
+# Usage (from repo root):
+#   julia --project bench_sweep.jl
+#
+# Results are saved to ./output/bench_sweep_results.toml (and .png if BENCH_VIZ=1).
+#
+# Environment variables:
+#   BENCH_BACKEND      backend to use: gpu (default), cpu, tpu
+#   BENCH_VIZ          set to 1 to save a CairoMakie figure alongside the TOML
+#   BENCH_SWEEP_OUTDIR output directory (default: ./output/)
+#   BENCH_SWEEP_OUT    full path to output TOML (overrides BENCH_SWEEP_OUTDIR)
+#   BENCH_RES_S2D      comma-separated nx list for Stokes 2D      (default: 64,128,256,512,1024,2048,4096,8192)
+#   BENCH_RES_S3D      comma-separated nx list for Stokes 3D      (default: 32,64,128,256,512)
+#   BENCH_RES_PW2D     comma-separated nx list for PorowavesStokes 2D (default: 64,128,256,512,1024,2048,4096)
+#   BENCH_RES_PW3D     comma-separated nx list for PorowavesStokes 3D (default: 32,64,128,256,512)
+#
+# Examples:
+#   # Quick smoke-test on CPU
+#   BENCH_BACKEND=cpu BENCH_RES_S2D=64,128 BENCH_RES_S3D=32 BENCH_RES_PW2D=64 BENCH_RES_PW3D=32 \
+#       julia --project bench_sweep.jl
+#
+#   # Full GPU sweep with figure
+#   BENCH_VIZ=1 julia --project bench_sweep.jl
+#
+#   # Re-plot an existing result without re-running
+#   julia --project bench_viz.jl
 using Printf, Dates
 
 const _bench_sweep = true   # must be in Main before any include
@@ -33,7 +54,7 @@ println("="^60)
 results_s2d = []
 for nx in res_s2d
 # default: [512,1024,2048,4096]  |  override: BENCH_RES_S2D=64,128,256
-    @printf "--- nx=%d ---\n" nx
+    @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = S2D.main(nx=nx, ny=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s2d, (nx=nx, r...))
 end
@@ -47,7 +68,7 @@ println("="^60)
 results_s3d = []
 for nx in res_s3d
 # default: [128,256,512,1024]  |  override: BENCH_RES_S3D=32,64,128
-    @printf "--- nx=%d ---\n" nx
+    @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = S3D.main(nx=nx, ny=nx, nz=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s3d, (nx=nx, r...))
 end
@@ -61,7 +82,7 @@ println("="^60)
 results_pw2d = []
 for nx in res_pw2d
 # default: [256,512,1024,2048]  |  override: BENCH_RES_PW2D=32,64,128,256
-    @printf "--- nx=%d ---\n" nx
+    @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = PW2D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw2d, (nx=nx, r...))
 end
@@ -75,7 +96,7 @@ println("="^60)
 results_pw3d = []
 for nx in res_pw3d
 # default: [64,128,256,512]  |  override: BENCH_RES_PW3D=16,32,64,128
-    @printf "--- nx=%d ---\n" nx
+    @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = PW3D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw3d, (nx=nx, r...))
 end
