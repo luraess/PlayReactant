@@ -253,5 +253,5 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
     return
 end
 
-res = 64
+res = 256
 main(nx=res, ny=res, nz=res, backend=:gpu, verbose=false, do_plot=true)
