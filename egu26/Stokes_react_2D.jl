@@ -70,7 +70,7 @@ function solve(Pt, Vxs, Vys, τxx, τyy, τxy, ∇Vs, RVx, RVy, Rτxx, Rτyy, R�
     return iter, err
 end
 
-function main(; nx=128, ny=128, backend=:auto, verbose=true)
+function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # independent physics
@@ -121,23 +121,27 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true)
     Pt      = CRArray(fill(P0, nx, ny))
     ηs_v    = fill(ηs0, nx + 1, ny + 1)
     ηs_v[hypot.(xv, yv') .< radius] .= ηs_inc
-    ηs_v    = CRArray(ηs_v)
     ηs      = CRArray(av(ηs_v))
+    ηs_v    = CRArray(ηs_v)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+
     # visualisation init
-    fig = Figure(; size=(400, 600))
-    axs = (Axis(fig[1, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="P total"),
-           Axis(fig[2, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Vxs"),
-           Axis(fig[3, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Vys"))
-    plt = (heatmap!(axs[1], xc,  yc, Array(Pt);  colorrange=(-3,3), colormap=(CairoMakie.Reverse(:matter), 1)),
-           heatmap!(axs[2], xv,  yce, Array(Vxs); colormap=:turbo),
-           heatmap!(axs[3], xce, yv,  Array(Vys); colormap=:turbo))
-    cbs = (Colorbar(fig[1, 1][1, 2], plt[1]),
-           Colorbar(fig[2, 1][1, 2], plt[2]),
-           Colorbar(fig[3, 1][1, 2], plt[3]))
-    hidexdecorations!.((axs[1], axs[2]))
+    if do_plot
+        out_dir = "output"; mkpath(out_dir)
+        fig = Figure(; size=(400, 600))
+        axs = (Axis(fig[1, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="P total"),
+               Axis(fig[2, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Vxs"),
+               Axis(fig[3, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Vys"))
+        plt = (heatmap!(axs[1], xc,  yc, Array(Pt);  colorrange=(-3,3), colormap=(CairoMakie.Reverse(:matter), 1)),
+               heatmap!(axs[2], xv,  yce, Array(Vxs); colormap=:turbo),
+               heatmap!(axs[3], xce, yv,  Array(Vys); colormap=:turbo))
+        cbs = (Colorbar(fig[1, 1][1, 2], plt[1]),
+               Colorbar(fig[2, 1][1, 2], plt[2]),
+               Colorbar(fig[3, 1][1, 2], plt[3]))
+        hidexdecorations!.((axs[1], axs[2]))
+    end
 
     if use_reactant
         t_compile = time_ns()
@@ -162,12 +166,16 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true)
     end
 
     # visualisation
-    plt[1][3] = Array(Pt) .- P0
-    plt[2][3] = Array(Vxs .+ ε̇ .* x2D_Vxs)
-    plt[3][3] = Array(Vys .- ε̇ .* y2D_Vys)
-    display(fig)
+    if do_plot
+        plt[1][3] = Array(Pt) .- P0
+        plt[2][3] = Array(Vxs .+ ε̇ .* x2D_Vxs)
+        plt[3][3] = Array(Vys .- ε̇ .* y2D_Vys)
+        # display(fig)
+        save(joinpath(out_dir, "output_Stokes2D.png"), fig)
+    end
 
     return
 end
 
-main(nx=128, ny=128, backend=:cpu, verbose=false)
+res = 512
+main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=false)

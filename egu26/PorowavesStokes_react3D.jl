@@ -178,7 +178,7 @@ function solve3Dpw(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
     return iter, err
 end
 
-function main(; nx=32, backend=:auto, verbose=true)
+function main(; nx=32, nt=1, backend=:auto, verbose=true, do_plot=true)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # physics
@@ -283,24 +283,26 @@ function main(; nx=32, backend=:auto, verbose=true)
     iter   = CRNumber(0)
     err    = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+
     # visualisation init — xz mid-plane slice (j = ny÷2)
-    jmid = ny ÷ 2
-    fig = Figure(; size=(600, 800))
-    axs = (Axis(fig[1,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Porosity (xz mid)"),
-           Axis(fig[1,2][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Pe (xz mid)"),
-           Axis(fig[2,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="permeability (xz mid)"),
-           Axis(fig[2,2][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="bulk viscosity (xz mid)"))
-    plt = (heatmap!(axs[1], xc, zc, Array(ϕ)[:, jmid, :];      colormap=:turbo),
-           heatmap!(axs[2], xc, zc, Array(Pf .- Pt)[:, jmid, :];     colormap=:turbo),
-           heatmap!(axs[3], xc, zc, Array(k_ηf)[:, jmid, :];   colormap=:turbo),
-           heatmap!(axs[4], xc, zc, Array(ηϕ)[:, jmid, :];     colormap=:turbo))
-    cbs = (Colorbar(fig[1,1][1,2], plt[1]),
-           Colorbar(fig[1,2][1,2], plt[2]),
-           Colorbar(fig[2,1][1,2], plt[3]),
-           Colorbar(fig[2,2][1,2], plt[4]))
-    hideydecorations!.((axs[2], axs[4]))
-    # display(fig)
-    # error("stop 3D")
+    if do_plot
+        out_dir = "output"; mkpath(out_dir)
+        jmid = ny ÷ 2
+        fig = Figure(; size=(600, 800))
+        axs = (Axis(fig[1,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Porosity (xz mid)"),
+               Axis(fig[1,2][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Pe (xz mid)"),
+               Axis(fig[2,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="permeability (xz mid)"),
+               Axis(fig[2,2][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="bulk viscosity (xz mid)"))
+        plt = (heatmap!(axs[1], xc, zc, Array(ϕ)[:, jmid, :];        colormap=:turbo),
+               heatmap!(axs[2], xc, zc, Array(Pf .- Pt)[:, jmid, :]; colormap=:turbo),
+               heatmap!(axs[3], xc, zc, Array(k_ηf)[:, jmid, :];     colormap=:turbo),
+               heatmap!(axs[4], xc, zc, Array(ηϕ)[:, jmid, :];       colormap=:turbo))
+        cbs = (Colorbar(fig[1,1][1,2], plt[1]),
+               Colorbar(fig[1,2][1,2], plt[2]),
+               Colorbar(fig[2,1][1,2], plt[3]),
+               Colorbar(fig[2,2][1,2], plt[4]))
+        hideydecorations!.((axs[2], axs[4]))
+    end
     nxm = (nx + 1) ÷ 2
     nym = (ny + 1) ÷ 2
     time_evo = [0.0]
@@ -382,17 +384,20 @@ function main(; nx=32, backend=:auto, verbose=true)
         dt_r = CRNumber(cfl_dt * to_scalar(maximum(ϕ)) / maximum(abs, Array(dϕdt)))
 
         # visualisation — xz mid-plane slice
-        if mod(it, nviz) == 0 || it == 1
-            plt[1][3] = Array(ϕ)[:, jmid, :]
-            plt[2][3] = Array(Pe)[:, jmid, :]
-            plt[3][3] = Array(k_ηf)[:, jmid, :]
-            plt[4][3] = Array(ηϕ)[:, jmid, :]
-            display(fig)
+        if do_plot
+            if mod(it, nviz) == 0 || it == 1
+                plt[1][3] = Array(ϕ)[:, jmid, :]
+                plt[2][3] = Array(Pe)[:, jmid, :]
+                plt[3][3] = Array(k_ηf)[:, jmid, :]
+                plt[4][3] = Array(ηϕ)[:, jmid, :]
+                # display(fig)
+                save(joinpath(out_dir, "output_PW3D_$(lpad(it, 4, '0')).png"), fig)
+            end
         end
         # stopping criterion — check centre column at top
-        ((inv(ϕ_bg) * to_scalar(ϕ[nxm, nym, Int(ceil(top))])) > 1.05) && break
+        ((inv(ϕ_bg) * Array(ϕ)[nxm, nym, Int(ceil(top))]) > 1.05) && break
     end
     return
 end
 
-main(nx=48, backend=:cpu, verbose=true)
+main(nx=128, nt=1, backend=:gpu, verbose=true, do_plot=true)

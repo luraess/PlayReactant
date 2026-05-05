@@ -113,7 +113,7 @@ function solve3D(Pt, Vxs, Vys, Vzs,
     return iter, err
 end
 
-function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true)
+function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # physics — pure shear in xz plane, y is the neutral axis
@@ -177,7 +177,6 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true)
     for k in eachindex(xce), j in eachindex(yce), i in eachindex(xce)
         hypot(xce[i], yce[j], xce[k]) < radius && (ηs_v_h[i,j,k] = ηs_inc)
     end
-    # ηs_v  = CRArray(ηs_v_h)
     ηs    = CRArray(ηs_v_h[2:end-1, 2:end-1, 2:end-1])
     ηs_xy = CRArray(avxyi(ηs_v_h))   # average to (nx+1, ny+1, nz) τxy nodes
     ηs_xz = CRArray(avxzi(ηs_v_h))   # average to (nx+1, ny, nz+1) τxz nodes
@@ -185,20 +184,23 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
-    # visualisation init — xz mid-plane slices (j = ny÷2)
-    jmid = ny ÷ 2
-    fig = Figure(; size=(400, 600))
-    axs = (Axis(fig[1,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="P total  (xz mid)"),
-           Axis(fig[2,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Vxs (xz mid)"),
-           Axis(fig[3,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Vzs (xz mid)"))
-    plt = (heatmap!(axs[1], xc, zc,  Array(Pt)[:, jmid, :];         colorrange=(-3,3), colormap=(CairoMakie.Reverse(:matter), 1)),
-           heatmap!(axs[2], xv, zce, Array(Vxs_init)[:, jmid+1, :]; colormap=:turbo),
-           heatmap!(axs[3], xce, zv, Array(Vzs_init)[jmid+1, :, :]; colormap=:turbo))
-    cbs = (Colorbar(fig[1,1][1,2], plt[1]),
-           Colorbar(fig[2,1][1,2], plt[2]),
-           Colorbar(fig[3,1][1,2], plt[3]))
-    hidexdecorations!.((axs[1], axs[2]))
 
+    # visualisation init — xz mid-plane slices (j = ny÷2)
+    if do_plot
+        out_dir = "output"; mkpath(out_dir)
+        jmid = ny ÷ 2
+        fig = Figure(; size=(400, 600))
+        axs = (Axis(fig[1,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="P total  (xz mid)"),
+               Axis(fig[2,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Vxs (xz mid)"),
+               Axis(fig[3,1][1,1]; aspect=DataAspect(), xlabel="x", ylabel="z", title="Vzs (xz mid)"))
+        plt = (heatmap!(axs[1], xc, zc,  Array(Pt)[:, jmid, :];         colorrange=(-3,3), colormap=(CairoMakie.Reverse(:matter), 1)),
+               heatmap!(axs[2], xv, zce, Array(Vxs_init)[:, jmid+1, :]; colormap=:turbo),
+               heatmap!(axs[3], xce, zv, Array(Vzs_init)[jmid+1, :, :]; colormap=:turbo))
+        cbs = (Colorbar(fig[1,1][1,2], plt[1]),
+               Colorbar(fig[2,1][1,2], plt[2]),
+               Colorbar(fig[3,1][1,2], plt[3]))
+        hidexdecorations!.((axs[1], axs[2]))
+    end
     if use_reactant
         t_compile = time_ns()
         solve_react = @compile sync=true solve3D(Pt, Vxs, Vys, Vzs,
@@ -240,11 +242,16 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true)
     end
 
     # visualisation — xz mid-plane
-    plt[1][3] = (Array(Pt) .- P0)[:, jmid, :]
-    plt[2][3] = Array(Vxs)[:, jmid+1, :]
-    plt[3][3] = Array(Vzs)[jmid+1, :, :]
-    display(fig)
+    if do_plot
+        plt[1][3] = (Array(Pt) .- P0)[:, jmid, :]
+        plt[2][3] = Array(Vxs)[:, jmid+1, :]
+        plt[3][3] = Array(Vzs)[jmid+1, :, :]
+        # display(fig)
+        save(joinpath(out_dir, "output_Stokes3D.png"), fig)
+    end
+
     return
 end
 
-main(nx=64, ny=64, nz=64, backend=:cpu, verbose=true)
+res = 64
+main(nx=res, ny=res, nz=res, backend=:gpu, verbose=false, do_plot=true)

@@ -130,7 +130,7 @@ function solve(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
     return iter, err
 end
 
-function main(; nx=40, backend=:auto, verbose=true)
+function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # independent physics
@@ -162,7 +162,6 @@ function main(; nx=40, backend=:auto, verbose=true)
     tol     = 1e-3
     cfl_dt  = 2e-2
     ϕ_rel   = 1e-1
-    nt      = 1
     maxiter = 150ny
     nout    = 5ny
     nviz    = 5
@@ -223,22 +222,24 @@ function main(; nx=40, backend=:auto, verbose=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
-    # visualisation init
-    fig = Figure(; size=(600, 800))
-    axs = (Axis(fig[1, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Porosity"),
-           Axis(fig[1, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="P effective"),
-           Axis(fig[2, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="permeability"),
-           Axis(fig[2, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="bulk viscosity"))
-    plt = (heatmap!(axs[1], xc, yc, Array(ϕ);        colormap=:turbo),
-           heatmap!(axs[2], xc, yc, Array(Pf .- Pt); colormap=:turbo),
-           heatmap!(axs[3], xc, yc, Array(k_ηf);     colormap=:turbo),
-           heatmap!(axs[4], xc, yc, Array(ηϕ);       colormap=:turbo))
-    cbs = (Colorbar(fig[1, 1][1, 2], plt[1]),
-           Colorbar(fig[1, 2][1, 2], plt[2]),
-           Colorbar(fig[2, 1][1, 2], plt[3]),
-           Colorbar(fig[2, 2][1, 2], plt[4]))
-    hideydecorations!.((axs[2], axs[4]))
-
+    if do_plot
+        out_dir = "output"; mkpath(out_dir)
+        # visualisation init
+        fig = Figure(; size=(600, 800))
+        axs = (Axis(fig[1, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="Porosity"),
+               Axis(fig[1, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="P effective"),
+               Axis(fig[2, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="permeability"),
+               Axis(fig[2, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="bulk viscosity"))
+        plt = (heatmap!(axs[1], xc, yc, Array(ϕ);        colormap=:turbo),
+               heatmap!(axs[2], xc, yc, Array(Pf .- Pt); colormap=:turbo),
+               heatmap!(axs[3], xc, yc, Array(k_ηf);     colormap=:turbo),
+               heatmap!(axs[4], xc, yc, Array(ηϕ);       colormap=:turbo))
+        cbs = (Colorbar(fig[1, 1][1, 2], plt[1]),
+               Colorbar(fig[1, 2][1, 2], plt[2]),
+               Colorbar(fig[2, 1][1, 2], plt[3]),
+               Colorbar(fig[2, 2][1, 2], plt[4]))
+        hideydecorations!.((axs[2], axs[4]))
+    end
     nxm = (nx + 1) ÷ 2
     time_evo = [0.0]
     ϕmax_evo = [to_scalar(maximum(ϕ))]
@@ -307,18 +308,21 @@ function main(; nx=40, backend=:auto, verbose=true)
         # time step update (extract to host for arithmetic)
         dt_r = CRNumber(cfl_dt * to_scalar(maximum(ϕ)) / maximum(abs, Array(dϕdt)))
 
-        # visualisation
-        if mod(it, nviz) == 0 || it == 1
-            plt[1][3] = Array(ϕ)
-            plt[2][3] = Array(Pf .- Pt)
-            plt[3][3] = Array(k_ηf)
-            plt[4][3] = Array(ηϕ)
-            display(fig)
+        if do_plot
+            # visualisation
+            if mod(it, nviz) == 0 || it == 1
+                plt[1][3] = Array(ϕ)
+                plt[2][3] = Array(Pf .- Pt)
+                plt[3][3] = Array(k_ηf)
+                plt[4][3] = Array(ηϕ)
+                # display(fig)
+                save(joinpath(out_dir, "output_PW2D_$(lpad(it, 4, '0')).png"), fig)
+            end
         end
         # stopping criterion
-        ((inv(ϕ_bg) * to_scalar(ϕ[nxm, Int(ceil(top))])) > 1.05) && break
+        ((inv(ϕ_bg) * Array(ϕ)[nxm, Int(ceil(top))]) > 1.05) && break
     end
     return
 end
 
-main(nx=64, backend=:cpu, verbose=false)
+main(nx=64, nt=1, backend=:gpu, verbose=false, do_plot=true)
