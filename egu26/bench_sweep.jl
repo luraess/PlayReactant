@@ -9,10 +9,10 @@ using Printf
 const _bench_sweep = true   # must be in Main before any include
 
 println("Loading solvers (this compiles Julia code, not Reactant)...")
-module S2D;  include("./Stokes_react2D.jl");           end
-module S3D;  include("./Stokes_react3D.jl");           end
-module PW2D; include("./PorowavesStokes_react2D.jl");  end
-module PW3D; include("./PorowavesStokes_react3D.jl");  end
+module S2D;  include("Stokes_react2D.jl");           end
+module S3D;  include("Stokes_react3D.jl");           end
+module PW2D; include("PorowavesStokes_react2D.jl");  end
+module PW3D; include("PorowavesStokes_react3D.jl");  end
 
 backend = :gpu   # change to :cpu to run on CPU
 
@@ -26,7 +26,7 @@ results_s2d = []
 # for nx in [64, 128]
 for nx in [64, 128, 256, 512, 1024, 2048]
     @printf "--- nx=%d ---\n" nx
-    r = S2D.main(nx=nx, ny=nx, backend=backend, bench=true)
+    r = S2D.main(nx=nx, ny=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s2d, (nx=nx, r...))
 end
 
@@ -40,7 +40,7 @@ results_s3d = []
 # for nx in [32, 64]
 for nx in [32, 64, 128, 256, 512]
     @printf "--- nx=%d ---\n" nx
-    r = S3D.main(nx=nx, ny=nx, nz=nx, backend=backend, bench=true)
+    r = S3D.main(nx=nx, ny=nx, nz=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s3d, (nx=nx, r...))
 end
 
@@ -54,7 +54,7 @@ results_pw2d = []
 # for nx in [32, 64]
 for nx in [32, 64, 128, 256, 512, 1024]
     @printf "--- nx=%d ---\n" nx
-    r = PW2D.main(nx=nx, nt=1, backend=backend, bench=true)
+    r = PW2D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw2d, (nx=nx, r...))
 end
 
@@ -68,7 +68,7 @@ results_pw3d = []
 # for nx in [32, 64]
 for nx in [16, 32, 64, 128, 256]
     @printf "--- nx=%d ---\n" nx
-    r = PW3D.main(nx=nx, nt=1, backend=backend, bench=true)
+    r = PW3D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw3d, (nx=nx, r...))
 end
 
@@ -78,7 +78,7 @@ end
 println("\n" * "="^70)
 println("SUMMARY")
 println("="^70)
-@printf "%-20s %6s %10s %10s %8s %10s\n" "solver" "nx" "t_compile[s]" "t_run[s]" "niter" "T_eff[GB/s]"
+@printf "%-20s %6s %12s %10s %8s %10s\n" "solver" "nx" "t_compile[s]" "t_run[s]" "niter" "T_eff[GB/s]"
 println("-"^70)
 for (label, results) in [("Stokes2D",   results_s2d),
                          ("Stokes3D",   results_s3d),
