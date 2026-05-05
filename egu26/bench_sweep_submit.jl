@@ -44,7 +44,7 @@ end
 @info "Output directory: $out_path"
 
 # ── Sweep configuration (edit here) ─────────────────────────────────
-bench_backend = "gpu"
+bench_backend = "auto"
 res_s2d       = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 res_s3d       = [32, 64, 128, 256, 512]
 res_pw2d      = [64, 128, 256, 512, 1024, 2048, 4096]
