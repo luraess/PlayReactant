@@ -2,33 +2,8 @@ using LinearAlgebra, Statistics, Printf
 using CairoMakie
 using Reactant
 
-const _CUDA_functional = try
-    using CUDA
-    CUDA.functional()
-catch
-    false
-end
+include("reactant_helpers.jl")
 
-# backend init
-function init_backend(backend::Symbol=:auto)
-    resolved = if backend === :auto
-        _CUDA_functional ? :gpu : :cpu
-    else
-        backend
-    end
-    if resolved !== :none
-        Reactant.set_default_backend(resolved === :gpu ? "gpu" : "cpu")
-        @info "Reactant backend: $resolved"
-        return resolved, Reactant.ConcreteRArray, Reactant.ConcreteRNumber
-    else
-        @info "Plain Julia backend"
-        return resolved, identity, identity
-    end
-end
-
-# helper functions
-to_scalar(x::Union{AbstractFloat, Integer}) = x
-to_scalar(x) = Reactant.to_number(x)
 # inner region (remove one ghost on each side)
 @views inn(A)  = A[2:end-1, 2:end-1, 2:end-1]
 @views innx(A) = A[2:end-1, :, :]
