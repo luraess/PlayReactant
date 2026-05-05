@@ -17,7 +17,7 @@
 #
 # Examples:
 #   # Quick smoke-test on CPU
-#   BENCH_BACKEND=cpu BENCH_RES_S2D=64,128 BENCH_RES_S3D=32 BENCH_RES_PW2D=64 BENCH_RES_PW3D=32 \
+#   BENCH_BACKEND=auto BENCH_RES_S2D=64,128 BENCH_RES_S3D=32 BENCH_RES_PW2D=64 BENCH_RES_PW3D=32 \
 #       julia --project bench_sweep.jl
 #
 #   # Full GPU sweep with figure
@@ -36,7 +36,7 @@ module PW2D; include("PorowavesStokes_react2D.jl");  end
 module PW3D; include("PorowavesStokes_react3D.jl");  end
 
 # ── configurable via env vars ─────────────────────────────────────────
-backend = Symbol(get(ENV, "BENCH_BACKEND", "gpu"))  # :gpu | :tpu | :cpu
+backend = Symbol(get(ENV, "BENCH_BACKEND", "auto"))  # :gpu | :tpu | :cpu
 do_viz  = get(ENV, "BENCH_VIZ", "0") == "1"        # set BENCH_VIZ=1 to produce figures
 
 _parse_res(env, default) = haskey(ENV, env) ? parse.(Int, split(ENV[env], ',')) : default
