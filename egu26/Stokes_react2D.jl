@@ -178,4 +178,4 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
 end
 
 res = 512
-main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=false)
+main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=true)
