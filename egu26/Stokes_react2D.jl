@@ -161,5 +161,5 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true, bench
     return
 end
 
-res = 512
-isdefined(Main, :_bench_sweep) || main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=true)
+res = 128
+isdefined(Main, :_bench_sweep) || main(nx=res, ny=res, backend=:auto, verbose=false, do_plot=true)

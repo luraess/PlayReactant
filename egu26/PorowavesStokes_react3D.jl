@@ -389,4 +389,4 @@ function main(; nx=32, nt=1, backend=:auto, verbose=true, do_plot=true, bench=fa
     return
 end
 
-isdefined(Main, :_bench_sweep) || main(nx=128, nt=1, backend=:gpu, verbose=true, do_plot=true)
+isdefined(Main, :_bench_sweep) || main(nx=128, nt=1, backend=:auto, verbose=true, do_plot=true)
