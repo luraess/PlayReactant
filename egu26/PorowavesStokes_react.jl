@@ -321,4 +321,4 @@ function main(; nx=40, backend=:auto, verbose=true)
     return
 end
 
-main(nx=64, backend=:none, verbose=false)
+main(nx=64, backend=:cpu, verbose=false)
