@@ -45,7 +45,92 @@ to_scalar(x) = Reactant.to_number(x)
     A[:, end] .= A[:, end-1]
 end
 
-@views function main(; nx=40, backend=:auto, verbose=true)
+@views function step(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
+                     Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
+                     lc_loc, re, θ_dτ, dτ_βf,
+                     RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
+                     ϕ_old, ρt_old,
+                     dx, dy, dt, nout,
+                     ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
+                     νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
+                     iter, err, err_log)
+    iter += 1
+    # material params
+    ηϕ   .= ηϕ_bg .* (ϕ_bg ./ ϕ) .* (1.0 .+ 0.5 .* (1.0 / R - 1.0) .* (1.0 .+ tanh.(Pe ./ λPe)))
+    k_ηf .= exp.((1.0 - ϕ_rel) .* log.(k_ηf) .+ ϕ_rel .* log.(k_ηf0 .* (ϕ ./ ϕ_bg) .^ npow))
+    ρt   .= (1.0 .- ϕ) .* ρs .+ ϕ .* ρf
+    ∇Vs  .= diff(Vxs[:, 2:end-1], dims=1) ./ dx .+ diff(Vys[2:end-1, :], dims=2) ./ dy
+    # solid velocities
+    RVx  .= diff(.-Pt[:, 2:end-1] .+ τxx[:, 2:end-1], dims=1) ./ dx .+ diff(τxy, dims=2) ./ dy
+    RVy  .= diff(.-Pt[2:end-1, :] .+ τyy[2:end-1, :], dims=2) ./ dy .+ diff(τxy, dims=1) ./ dx .- avy(ρt[2:end-1, :])
+    Vxs[:, 2:end-1] .+= RVx .* νdτ ./ ηs
+    Vys[2:end-1, :] .+= RVy .* νdτ ./ ηs
+    # linear viscous flow law
+    Rτxx[2:end-1, 2:end-1] .= -inn(τxx) .+ 2.0 .* ηs .* (diff(Vxs[:, 2:end-1], dims=1) ./ dx .- ∇Vs ./ 3)
+    Rτyy[2:end-1, 2:end-1] .= -inn(τyy) .+ 2.0 .* ηs .* (diff(Vys[2:end-1, :], dims=2) ./ dy .- ∇Vs ./ 3)
+    Rτxy                    .=    -τxy   .+        ηs .* (diff(Vxs, dims=2) ./ dy .+ diff(Vys, dims=1) ./ dx)
+    τxx .+= Rτxx .* dτ_r
+    τyy .+= Rτyy .* dτ_r
+    τxy .+= Rτxy .* dτ_r
+    # total pressure from solid mass balance
+    RPt .= .-inn(ϕ .- ϕ_old) ./ dt .+
+           diff((1.0 .- avxi(ϕ)) .* Vxs[:, 2:end-1], dims=1) ./ dx .+
+           diff((1.0 .- avyi(ϕ)) .* Vys[2:end-1, :], dims=2) ./ dy
+    # porous flow
+    lc_loc .= sqrt.(k_ηf .* ηϕ)
+    re     .= π .+ sqrt.(π^2 .+ (min(lx, ly) ./ lc_loc) .^ 2)
+    θ_dτ   .= min(lx, ly) ./ re ./ cfl ./ max(dx, dy)
+    dτ_βf  .= cfl * min(lx, ly) .* max(dx, dy) ./ maxloc(re .* k_ηf)
+    RqDx   .= .-qDx .- avxi(k_ηf) .*  diff(Pf[:, 2:end-1], dims=1) ./ dx
+    RqDy   .= .-qDy .- avyi(k_ηf) .* (diff(Pf[2:end-1, :], dims=2) ./ dy .- ρf)
+    qDx   .+= RqDx ./ (1.0 .+ avxi(θ_dτ))
+    qDy   .+= RqDy ./ (1.0 .+ avyi(θ_dτ))
+    Qfx    .= ρf .* qDx .+ avxi(ρt) .* Vxs[:, 2:end-1]
+    Qfy    .= ρf .* qDy .+ avyi(ρt) .* Vys[2:end-1, :]
+    Pt[2:end-1, 2:end-1] .-= RPt .* ηs .* (1.0 .- inn(ϕ)) .* dτ_Pr
+    # fluid pressure from total mass balance
+    RPf .= inn(ρt .- ρt_old) ./ dt .+ diff(Qfx, dims=1) ./ dx .+ diff(Qfy, dims=2) ./ dy
+    Pf[2:end-1, 2:end-1] .-= RPf .* inn(ϕ) .* dτ_βf
+    # porosity update from compaction eqn
+    Pe   .= Pf .- Pt
+    dϕdt .= inn(Pe ./ ηϕ)
+    ϕ[2:end-1, 2:end-1] .= inn(ϕ_old) .+ dt .* dϕdt
+    neumann_bcs_ap!(ϕ)
+    # err (ifelse to avoid branching on traced bool)
+    err  = ifelse(mod(iter, nout) == 0,
+                  max(maximum(abs, RVx), maximum(abs, RVy), maximum(abs, RPt), maximum(abs, RPf)),
+                  err)
+    mask    = (1:length(err_log)) .== ((iter - 1) ÷ nout + 1)
+    err_log .= ifelse.(mask, err, err_log)
+    return iter, err
+end
+
+function solve(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
+               Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
+               lc_loc, re, θ_dτ, dτ_βf,
+               RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
+               ϕ_old, ρt_old,
+               dx, dy, dt, nout,
+               ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
+               νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
+               tol, maxiter, iter, err, err_log)
+    ϕ_old  .= ϕ
+    ρt_old .= (1.0 .- ϕ) .* ρs .+ ϕ .* ρf
+    @trace while (iter < maxiter) & (err >= tol)
+        iter, err = step(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
+                         Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
+                         lc_loc, re, θ_dτ, dτ_βf,
+                         RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
+                         ϕ_old, ρt_old,
+                         dx, dy, dt, nout,
+                         ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
+                         νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
+                         iter, err, err_log)
+    end
+    return iter, err
+end
+
+function main(; nx=40, backend=:auto, verbose=true)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # independent physics
@@ -104,10 +189,10 @@ end
     ρt      = CRArray((1.0 .- Array(ϕ)) .* ρs .+ Array(ϕ) .* ρf)
     ρt_ref  = (1.0 .- ϕ_bg) .* ρs .+ ϕ_bg .* ρf
     Pt      = CRArray(-ρt_ref .* (0.0 .* xc .+ yc'))
-    Pf      = CRArray(copy(Array(Pt)))
-    Pe      = CRArray(Array(Pf) .- Array(Pt))
-    ϕ_old   = CRArray(copy(Array(ϕ)))
-    ρt_old  = CRArray(copy(Array(ρt)))
+    Pf      = CRArray(Array(Pt))
+    Pe      = CRArray(zeros(nx, ny))
+    ϕ_old   = CRArray(Array(ϕ))
+    ρt_old  = CRArray(Array(ρt))
     # initialisation
     ηϕ      = CRArray(zeros(nx, ny))
     Vxs     = CRArray(zeros(nx - 1, ny))
@@ -144,107 +229,19 @@ end
            Axis(fig[1, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="P effective"),
            Axis(fig[2, 1][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="permeability"),
            Axis(fig[2, 2][1, 1]; aspect=DataAspect(), xlabel="x", ylabel="y", title="bulk viscosity"))
-    plt = (heatmap!(axs[1], xc, yc, Array(ϕ);               colormap=:turbo),
-           heatmap!(axs[2], xc, yc, Array(Pf) .- Array(Pt); colormap=:turbo),
-           heatmap!(axs[3], xc, yc, Array(k_ηf);            colormap=:turbo),
-           heatmap!(axs[4], xc, yc, Array(ηϕ);              colormap=:turbo))
+    plt = (heatmap!(axs[1], xc, yc, Array(ϕ);        colormap=:turbo),
+           heatmap!(axs[2], xc, yc, Array(Pf .- Pt); colormap=:turbo),
+           heatmap!(axs[3], xc, yc, Array(k_ηf);     colormap=:turbo),
+           heatmap!(axs[4], xc, yc, Array(ηϕ);       colormap=:turbo))
     cbs = (Colorbar(fig[1, 1][1, 2], plt[1]),
            Colorbar(fig[1, 2][1, 2], plt[2]),
            Colorbar(fig[2, 1][1, 2], plt[3]),
            Colorbar(fig[2, 2][1, 2], plt[4]))
     hideydecorations!.((axs[2], axs[4]))
-    display(fig)
 
     nxm = (nx + 1) ÷ 2
     time_evo = [0.0]
     ϕmax_evo = [to_scalar(maximum(ϕ))]
-
-    # one PT iteration; returns updated (iter, err)
-    @views function step(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
-                         Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
-                         lc_loc, re, θ_dτ, dτ_βf,
-                         RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
-                         ϕ_old, ρt_old,
-                         dx, dy, dt, nout,
-                         ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
-                         νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
-                         iter, err, err_log)
-        iter += 1
-        # material params
-        ηϕ   .= ηϕ_bg .* (ϕ_bg ./ ϕ) .* (1.0 .+ 0.5 .* (1.0 / R - 1.0) .* (1.0 .+ tanh.(Pe ./ λPe)))
-        k_ηf .= exp.((1.0 - ϕ_rel) .* log.(k_ηf) .+ ϕ_rel .* log.(k_ηf0 .* (ϕ ./ ϕ_bg) .^ npow))
-        ρt   .= (1.0 .- ϕ) .* ρs .+ ϕ .* ρf
-        ∇Vs  .= diff(Vxs[:, 2:end-1], dims=1) ./ dx .+ diff(Vys[2:end-1, :], dims=2) ./ dy
-        # solid velocities
-        RVx  .= diff(.-Pt[:, 2:end-1] .+ τxx[:, 2:end-1], dims=1) ./ dx .+ diff(τxy, dims=2) ./ dy
-        RVy  .= diff(.-Pt[2:end-1, :] .+ τyy[2:end-1, :], dims=2) ./ dy .+ diff(τxy, dims=1) ./ dx .- avy(ρt[2:end-1, :])
-        Vxs[:, 2:end-1] .+= RVx .* νdτ ./ ηs
-        Vys[2:end-1, :] .+= RVy .* νdτ ./ ηs
-        # linear viscous flow law
-        Rτxx[2:end-1, 2:end-1] .= -inn(τxx) .+ 2.0 .* ηs .* (diff(Vxs[:, 2:end-1], dims=1) ./ dx .- ∇Vs ./ 3)
-        Rτyy[2:end-1, 2:end-1] .= -inn(τyy) .+ 2.0 .* ηs .* (diff(Vys[2:end-1, :], dims=2) ./ dy .- ∇Vs ./ 3)
-        Rτxy                    .=    -τxy   .+        ηs .* (diff(Vxs, dims=2) ./ dy .+ diff(Vys, dims=1) ./ dx)
-        τxx .+= Rτxx .* dτ_r
-        τyy .+= Rτyy .* dτ_r
-        τxy .+= Rτxy .* dτ_r
-        # total pressure from solid mass balance
-        RPt .= .-inn(ϕ .- ϕ_old) ./ dt .+
-               diff((1.0 .- avxi(ϕ)) .* Vxs[:, 2:end-1], dims=1) ./ dx .+
-               diff((1.0 .- avyi(ϕ)) .* Vys[2:end-1, :], dims=2) ./ dy
-        # porous flow
-        lc_loc .= sqrt.(k_ηf .* ηϕ)
-        re     .= π .+ sqrt.(π^2 .+ (min(lx, ly) ./ lc_loc) .^ 2)
-        θ_dτ   .= min(lx, ly) ./ re ./ cfl ./ max(dx, dy)
-        dτ_βf  .= cfl * min(lx, ly) .* max(dx, dy) ./ maxloc(re .* k_ηf)
-        RqDx   .= .-qDx .- avxi(k_ηf) .*  diff(Pf[:, 2:end-1], dims=1) ./ dx
-        RqDy   .= .-qDy .- avyi(k_ηf) .* (diff(Pf[2:end-1, :], dims=2) ./ dy .- ρf)
-        qDx   .+= RqDx ./ (1.0 .+ avxi(θ_dτ))
-        qDy   .+= RqDy ./ (1.0 .+ avyi(θ_dτ))
-        Qfx    .= ρf .* qDx .+ avxi(ρt) .* Vxs[:, 2:end-1]
-        Qfy    .= ρf .* qDy .+ avyi(ρt) .* Vys[2:end-1, :]
-        Pt[2:end-1, 2:end-1] .-= RPt .* ηs .* (1.0 .- inn(ϕ)) .* dτ_Pr
-        # fluid pressure from total mass balance
-        RPf .= inn(ρt .- ρt_old) ./ dt .+ diff(Qfx, dims=1) ./ dx .+ diff(Qfy, dims=2) ./ dy
-        Pf[2:end-1, 2:end-1] .-= RPf .* inn(ϕ) .* dτ_βf
-        # porosity update from compaction eqn
-        Pe   .= Pf .- Pt
-        dϕdt .= inn(Pe ./ ηϕ)
-        ϕ[2:end-1, 2:end-1] .= inn(ϕ_old) .+ dt .* dϕdt
-        neumann_bcs_ap!(ϕ)
-        # err (ifelse to avoid branching on traced bool)
-        err  = ifelse(mod(iter, nout) == 0,
-                      max(maximum(abs, RVx), maximum(abs, RVy), maximum(abs, RPt), maximum(abs, RPf)),
-                      err)
-        mask    = (1:length(err_log)) .== ((iter - 1) ÷ nout + 1)
-        err_log .= ifelse.(mask, err, err_log)
-        return iter, err
-    end
-
-    # PT loop: @trace while calls step; returns (iter, err)
-    function solve(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
-                   Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
-                   lc_loc, re, θ_dτ, dτ_βf,
-                   RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
-                   ϕ_old, ρt_old,
-                   dx, dy, dt, nout,
-                   ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
-                   νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
-                   tol, maxiter, iter, err, err_log)
-        ϕ_old  .= ϕ
-        ρt_old .= (1.0 .- ϕ) .* ρs .+ ϕ .* ρf
-        @trace while (iter < maxiter) & (err >= tol)  # @trace is a no-op without Reactant
-            iter, err = step(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
-                             Vxs, Vys, τxx, τyy, τxy, ∇Vs, qDx, qDy, Qfx, Qfy, dϕdt,
-                             lc_loc, re, θ_dτ, dτ_βf,
-                             RVx, RVy, RPt, RPf, Rτxx, Rτyy, Rτxy, RqDx, RqDy,
-                             ϕ_old, ρt_old,
-                             dx, dy, dt, nout,
-                             ρf, ρs, ηs, ηϕ_bg, ϕ_bg, npow, λPe, R, k_ηf0, ϕ_rel,
-                             νdτ, dτ_r, dτ_Pr, cfl, lx, ly,
-                             iter, err, err_log)
-        end
-        return iter, err
-    end
 
     # compile once before time loop
     if use_reactant
@@ -313,7 +310,7 @@ end
         # visualisation
         if mod(it, nviz) == 0 || it == 1
             plt[1][3] = Array(ϕ)
-            plt[2][3] = Array(Pf) .- Array(Pt)
+            plt[2][3] = Array(Pf .- Pt)
             plt[3][3] = Array(k_ηf)
             plt[4][3] = Array(ηϕ)
             display(fig)
@@ -324,4 +321,4 @@ end
     return
 end
 
-main(nx=128, backend=:cpu)
+main(nx=64, backend=:none, verbose=false)
