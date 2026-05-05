@@ -113,7 +113,7 @@ function solve3D(Pt, Vxs, Vys, Vzs,
     return iter, err
 end
 
-function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
+function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true, bench=false)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # physics — pure shear in xz plane, y is the neutral axis
@@ -184,6 +184,12 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+    _arrs   = (Pt, Vxs, Vys, Vzs, τxx, τyy, τzz, τxy, τxz, τyz,
+               ∇Vs, RVx, RVy, RVz, Rτxx, Rτyy, Rτzz, Rτxy, Rτxz, Rτyz,
+               ηs, ηs_xy, ηs_xz, ηs_yz)
+    A_bytes = sum(A -> length(A) * sizeof(eltype(A)), _arrs)
+    n_arr   = length(_arrs)
+    t_compile = 0.0; t_run = 0.0
 
     # visualisation init — xz mid-plane slices (j = ny÷2)
     if do_plot
@@ -234,6 +240,12 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
         @printf "  run: %.3f s\n" t_run
     end
     @printf "  converged: iter/nz=%d, err=%1.3e\n" to_scalar(iter) ÷ nz to_scalar(err)
+    if bench
+        niter = to_scalar(iter)
+        T_eff = 2 * A_bytes * 1e-9 * niter / t_run
+        @printf "  T_eff=%.2f GB/s  (nx=%d, %d arrays, niter=%d)\n" T_eff nx n_arr niter
+        return (; t_compile, t_run, niter, T_eff)
+    end
     if verbose
         for (i, e) in enumerate(Array(err_log))
             e == 0 && break
@@ -254,4 +266,4 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
 end
 
 res = 256
-main(nx=res, ny=res, nz=res, backend=:gpu, verbose=false, do_plot=true)
+isdefined(Main, :_bench_sweep) || main(nx=res, ny=res, nz=res, backend=:gpu, verbose=false, do_plot=true)

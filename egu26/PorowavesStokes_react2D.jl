@@ -130,7 +130,7 @@ function solve(ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf,
     return iter, err
 end
 
-function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true)
+function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true, bench=false)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # independent physics
@@ -222,6 +222,14 @@ function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+    _arrs   = (ϕ, k_ηf, ηϕ, ρt, Pe, Pt, Pf, ϕ_old, ρt_old,
+               Vxs, Vys, τxx, τyy, τxy, ∇Vs, dϕdt,
+               qDx, qDy, Qfx, Qfy, RVx, RVy, RPt, RPf,
+               Rτxx, Rτyy, Rτxy, RqDx, RqDy,
+               lc_loc, re, θ_dτ, dτ_βf)
+    A_bytes = sum(A -> length(A) * sizeof(eltype(A)), _arrs)
+    n_arr   = length(_arrs)
+    t_compile = 0.0; t_run = 0.0
     if do_plot
         out_dir = "output"; mkpath(out_dir)
         # visualisation init
@@ -295,6 +303,12 @@ function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true)
             @printf "  run: %.3f s\n" t_run
         end
         @printf "  converged: iter/ny=%d, err=%1.3e\n" to_scalar(iter) ÷ ny to_scalar(err)
+        if bench
+            niter = to_scalar(iter)
+            T_eff = 2 * A_bytes * 1e-9 * niter / t_run
+            @printf "  T_eff=%.2f GB/s  (nx=%d, %d arrays, niter=%d)\n" T_eff nx n_arr niter
+            return (; t_compile, t_run, niter, T_eff)
+        end
         if verbose
             for (i, e) in enumerate(Array(err_log))
                 e == 0 && break  # stop at first unfilled slot
@@ -325,4 +339,4 @@ function main(; nx=40, nt=1, backend=:auto, verbose=true, do_plot=true)
     return
 end
 
-main(nx=256, nt=1, backend=:gpu, verbose=false, do_plot=true)
+isdefined(Main, :_bench_sweep) || main(nx=256, nt=1, backend=:gpu, verbose=false, do_plot=true)

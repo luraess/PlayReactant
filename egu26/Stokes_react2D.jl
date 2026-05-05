@@ -70,7 +70,7 @@ function solve(Pt, Vxs, Vys, τxx, τyy, τxy, ∇Vs, RVx, RVy, Rτxx, Rτyy, R�
     return iter, err
 end
 
-function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
+function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true, bench=false)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # independent physics
@@ -126,6 +126,10 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+    _arrs   = (Pt, Vxs, Vys, τxx, τyy, τxy, ∇Vs, RVx, RVy, Rτxx, Rτyy, Rτxy, ηs, ηs_v)
+    A_bytes = sum(A -> length(A) * sizeof(eltype(A)), _arrs)
+    n_arr   = length(_arrs)
+    t_compile = 0.0; t_run = 0.0
 
     # visualisation init
     if do_plot
@@ -158,6 +162,12 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
         @printf "  run: %.3f s\n" t_run
     end
     @printf "  converged: iter/ny=%d, err=%1.3e\n" to_scalar(iter) ÷ ny to_scalar(err)
+    if bench
+        niter = to_scalar(iter)
+        T_eff = 2 * A_bytes * 1e-9 * niter / t_run
+        @printf "  T_eff=%.2f GB/s  (nx=%d, %d arrays, niter=%d)\n" T_eff nx n_arr niter
+        return (; t_compile, t_run, niter, T_eff)
+    end
     if verbose
         for (i, e) in enumerate(Array(err_log))
             e == 0 && break  # stop at first unfilled slot
@@ -178,4 +188,4 @@ function main(; nx=128, ny=128, backend=:auto, verbose=true, do_plot=true)
 end
 
 res = 512
-main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=true)
+isdefined(Main, :_bench_sweep) || main(nx=res, ny=res, backend=:gpu, verbose=false, do_plot=true)
