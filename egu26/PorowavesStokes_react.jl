@@ -66,9 +66,9 @@ end
     Vxs[:, 2:end-1] .+= RVx .* νdτ ./ ηs
     Vys[2:end-1, :] .+= RVy .* νdτ ./ ηs
     # linear viscous flow law
-    Rτxx[2:end-1, 2:end-1] .= -inn(τxx) .+ 2.0 .* ηs .* (diff(Vxs[:, 2:end-1], dims=1) ./ dx .- ∇Vs ./ 3)
-    Rτyy[2:end-1, 2:end-1] .= -inn(τyy) .+ 2.0 .* ηs .* (diff(Vys[2:end-1, :], dims=2) ./ dy .- ∇Vs ./ 3)
-    Rτxy                    .=    -τxy   .+        ηs .* (diff(Vxs, dims=2) ./ dy .+ diff(Vys, dims=1) ./ dx)
+    Rτxx[2:end-1, 2:end-1] .= .-inn(τxx) .+ 2.0 .* ηs .* (diff(Vxs[:, 2:end-1], dims=1) ./ dx .- ∇Vs ./ 3)
+    Rτyy[2:end-1, 2:end-1] .= .-inn(τyy) .+ 2.0 .* ηs .* (diff(Vys[2:end-1, :], dims=2) ./ dy .- ∇Vs ./ 3)
+    Rτxy                   .=      -τxy  .+        ηs .* (diff(Vxs, dims=2) ./ dy .+ diff(Vys, dims=1) ./ dx)
     τxx .+= Rτxx .* dτ_r
     τyy .+= Rτyy .* dτ_r
     τxy .+= Rτxy .* dτ_r
@@ -178,7 +178,7 @@ function main(; nx=40, backend=:auto, verbose=true)
     r       = 0.5
     lτ_re_m = min(lx, ly) / re_m
     vdτ     = min(dx, dy) / sqrt(4.1)
-    θ_dτ_s  = lτ_re_m * (r + 4 / 3) / vdτ   # scalar (name freed below for array)
+    θ_dτ_s  = lτ_re_m * (r + 4 / 3) / vdτ
     dτ_r    = 1.0 / (θ_dτ_s + 1.0)
     νdτ     = vdτ * lτ_re_m
     dτ_Pr   = r / θ_dτ_s
