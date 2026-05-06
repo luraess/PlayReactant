@@ -29,8 +29,8 @@ ax_teff  = Axis(fig[1, 2]; xlabel="nx", ylabel=L"T_\mathrm{eff}\;[\mathrm{GB/s}]
                 title="Effective memory throughput",
                 xscale=log2,
                 xticks=_nx_ticks(all_nxs))
-ax_niter = Axis(fig[2, 1]; xlabel="nx", ylabel=L"\mathrm{n}_\mathrm{iter}",
-                title="Iterations to convergence",
+ax_niter = Axis(fig[2, 1]; xlabel="nx", ylabel=L"\mathrm{n}_\mathrm{iter}\;/\;n_x",
+                title="Iterations to convergence (normalised by nx)",
                 xscale=log2,
                 xticks=_nx_ticks(all_nxs))
 ax_comp  = Axis(fig[2, 2]; xlabel="solver", ylabel=L"\min\,t_\mathrm{compile}\;[\mathrm{s}]",
@@ -44,7 +44,7 @@ for s in solvers
     nxs    = [r["nx"]             for r in sr]
     t_runs = [r["t_run"]          for r in sr]
     teffs  = [r["T_eff"]          for r in sr]
-    niters = [Float64(r["niter"]) for r in sr]
+    niters = [Float64(r["niter"]) ./ r["nx"] for r in sr]
     c, mk  = solver_colors[s], solver_markers[s]
     scatterlines!(ax_trun,  nxs, t_runs; color=c, marker=mk, label=s)
     scatterlines!(ax_teff,  nxs, teffs;  color=c, marker=mk, label=s)
