@@ -33,16 +33,18 @@ using Printf, Dates
 
 const _bench_sweep = true   # must be in Main before any include
 
-println("Loading solvers (this compiles Julia code, not Reactant)...")
-"s2d"  in _run_solvers && (module S2D;  include("Stokes_react2D.jl");           end)
-"s3d"  in _run_solvers && (module S3D;  include("Stokes_react3D.jl");           end)
-"pw2d" in _run_solvers && (module PW2D; include("PorowavesStokes_react2D.jl");  end)
-"pw3d" in _run_solvers && (module PW3D; include("PorowavesStokes_react3D.jl");  end)
-
 # ── configurable via env vars ─────────────────────────────────────────
 backend      = Symbol(get(ENV, "BENCH_BACKEND", "auto"))  # :gpu | :tpu | :cpu
 do_viz       = get(ENV, "BENCH_VIZ", "0") == "1"        # set BENCH_VIZ=1 to produce figures
 _run_solvers = Set(split(get(ENV, "BENCH_SOLVERS", "s2d,s3d,pw2d,pw3d"), ','))  # subset to run
+
+# module expressions must be at top level — always load all solvers;
+# the benchmark loops below are gated by _run_solvers instead.
+println("Loading solvers (this compiles Julia code, not Reactant)...")
+module S2D;  include("Stokes_react2D.jl");          end
+module S3D;  include("Stokes_react3D.jl");          end
+module PW2D; include("PorowavesStokes_react2D.jl"); end
+module PW3D; include("PorowavesStokes_react3D.jl"); end
 
 _parse_res(env, default) = haskey(ENV, env) ? parse.(Int, split(ENV[env], ',')) : default
 res_s2d  = _parse_res("BENCH_RES_S2D",  [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096, 8192])
