@@ -48,7 +48,7 @@ bench_backend = "auto"
 res_s2d       = [64, 128, 256, 512, 1024, 2048, 4096, 8192]
 res_s3d       = [32, 64, 128, 256, 512]
 res_pw2d      = [64, 128, 256, 512, 1024, 2048, 4096]
-res_pw3d      = [32, 64, 128, 256, 512]
+res_pw3d      = [32, 64, 128, 256]
 
 # ── Save config into run-info ─────────────────────────────────────────
 open(joinpath(out_path, "run-info.toml"), "a") do io

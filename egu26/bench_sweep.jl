@@ -43,7 +43,7 @@ _parse_res(env, default) = haskey(ENV, env) ? parse.(Int, split(ENV[env], ',')) 
 res_s2d  = _parse_res("BENCH_RES_S2D",  [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096, 8192])
 res_s3d  = _parse_res("BENCH_RES_S3D",  [32, 64])#[32, 64, 128, 256, 512])
 res_pw2d = _parse_res("BENCH_RES_PW2D", [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096])
-res_pw3d = _parse_res("BENCH_RES_PW3D", [32, 64])#[32, 64, 128, 256, 512])
+res_pw3d = _parse_res("BENCH_RES_PW3D", [32, 64])#[32, 64, 128, 256])
 
 # ─────────────────────────────────────────────────────────
 # Stokes 2D  (14 arrays per iteration, ~nx × ny each)
