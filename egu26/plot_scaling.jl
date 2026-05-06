@@ -42,8 +42,8 @@ lw = 2    # line width
 # ---- Panel 1: Teff ----
 ax1 = Axis(fig[1, 1];
     xscale  = log2,
-    xlabel  = "Number of GPUs",
-    ylabel  = "T_eff  [GB/s]",
+    xlabel  = L"\mathrm{Number\ of\ GPUs}",
+    ylabel  = L"T_\mathrm{eff}\;[\mathrm{GB/s}]",
     title   = "Effective memory throughput (weak scaling)",
     xticks  = (ngpus, string.(ngpus)),
     xminorticksvisible = false,
@@ -66,8 +66,8 @@ axislegend(ax1; position=:lb, framevisible=true)
 # ---- Panel 2: Weak scaling efficiency ----
 ax2 = Axis(fig[1, 2];
     xscale  = log2,
-    xlabel  = "Number of GPUs",
-    ylabel  = "Weak scaling efficiency  [%]",
+    xlabel  = L"\mathrm{Number\ of\ GPUs}",
+    ylabel  = L"\mathrm{Weak\ scaling\ efficiency}\;[\%]",
     title   = "Weak scaling efficiency",
     xticks  = (ngpus, string.(ngpus)),
     yticks  = 0:20:100,
