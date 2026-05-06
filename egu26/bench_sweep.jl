@@ -14,11 +14,15 @@
 #   BENCH_RES_S3D      comma-separated nx list for Stokes 3D      (default: 32,64,128,256,512)
 #   BENCH_RES_PW2D     comma-separated nx list for PorowavesStokes 2D (default: 64,128,256,512,1024,2048,4096)
 #   BENCH_RES_PW3D     comma-separated nx list for PorowavesStokes 3D (default: 32,64,128,256,512)
+#   BENCH_SOLVERS      comma-separated subset to run: s2d,s3d,pw2d,pw3d (default: all)
 #
 # Examples:
 #   # Quick smoke-test on CPU
 #   BENCH_BACKEND=auto BENCH_RES_S2D=64,128 BENCH_RES_S3D=32 BENCH_RES_PW2D=64 BENCH_RES_PW3D=32 \
 #       julia --project bench_sweep.jl
+#
+#   # Only PorowavesStokes solvers
+#   BENCH_SOLVERS=pw2d,pw3d julia --project bench_sweep.jl
 #
 #   # Full GPU sweep with figure
 #   BENCH_VIZ=1 julia --project bench_sweep.jl
@@ -30,14 +34,15 @@ using Printf, Dates
 const _bench_sweep = true   # must be in Main before any include
 
 println("Loading solvers (this compiles Julia code, not Reactant)...")
-module S2D;  include("Stokes_react2D.jl");           end
-module S3D;  include("Stokes_react3D.jl");           end
-module PW2D; include("PorowavesStokes_react2D.jl");  end
-module PW3D; include("PorowavesStokes_react3D.jl");  end
+"s2d"  in _run_solvers && (module S2D;  include("Stokes_react2D.jl");           end)
+"s3d"  in _run_solvers && (module S3D;  include("Stokes_react3D.jl");           end)
+"pw2d" in _run_solvers && (module PW2D; include("PorowavesStokes_react2D.jl");  end)
+"pw3d" in _run_solvers && (module PW3D; include("PorowavesStokes_react3D.jl");  end)
 
 # ── configurable via env vars ─────────────────────────────────────────
-backend = Symbol(get(ENV, "BENCH_BACKEND", "auto"))  # :gpu | :tpu | :cpu
-do_viz  = get(ENV, "BENCH_VIZ", "0") == "1"        # set BENCH_VIZ=1 to produce figures
+backend      = Symbol(get(ENV, "BENCH_BACKEND", "auto"))  # :gpu | :tpu | :cpu
+do_viz       = get(ENV, "BENCH_VIZ", "0") == "1"        # set BENCH_VIZ=1 to produce figures
+_run_solvers = Set(split(get(ENV, "BENCH_SOLVERS", "s2d,s3d,pw2d,pw3d"), ','))  # subset to run
 
 _parse_res(env, default) = haskey(ENV, env) ? parse.(Int, split(ENV[env], ',')) : default
 res_s2d  = _parse_res("BENCH_RES_S2D",  [64, 128])#[64, 128, 256, 512, 1024, 2048, 4096, 8192])
@@ -48,58 +53,66 @@ res_pw3d = _parse_res("BENCH_RES_PW3D", [32, 64])#[32, 64, 128, 256])
 # ─────────────────────────────────────────────────────────
 # Stokes 2D  (14 arrays per iteration, ~nx × ny each)
 # ─────────────────────────────────────────────────────────
+results_s2d = []
+if "s2d" in _run_solvers
 println("\n" * "="^60)
 println("Stokes 2D")
 println("="^60)
-results_s2d = []
 for nx in res_s2d
 # default: [512,1024,2048,4096]  |  override: BENCH_RES_S2D=64,128,256
     @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = S2D.main(nx=nx, ny=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s2d, (nx=nx, r...))
 end
+end  # s2d
 
 # ─────────────────────────────────────────────────────────
 # Stokes 3D  (24 arrays per iteration, ~nx × ny × nz each)
 # ─────────────────────────────────────────────────────────
+results_s3d = []
+if "s3d" in _run_solvers
 println("\n" * "="^60)
 println("Stokes 3D")
 println("="^60)
-results_s3d = []
 for nx in res_s3d
 # default: [128,256,512,1024]  |  override: BENCH_RES_S3D=32,64,128
     @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = S3D.main(nx=nx, ny=nx, nz=nx, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_s3d, (nx=nx, r...))
 end
+end  # s3d
 
 # ─────────────────────────────────────────────────────────
 # PorowavesStokes 2D  (33 arrays per iteration, ~nx × ny each)
 # ─────────────────────────────────────────────────────────
+results_pw2d = []
+if "pw2d" in _run_solvers
 println("\n" * "="^60)
 println("PorowavesStokes 2D")
 println("="^60)
-results_pw2d = []
 for nx in res_pw2d
 # default: [256,512,1024,2048]  |  override: BENCH_RES_PW2D=32,64,128,256
     @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = PW2D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw2d, (nx=nx, r...))
 end
+end  # pw2d
 
 # ─────────────────────────────────────────────────────────
 # PorowavesStokes 3D  (44 arrays per iteration, ~nx × ny × nz each)
 # ─────────────────────────────────────────────────────────
+results_pw3d = []
+if "pw3d" in _run_solvers
 println("\n" * "="^60)
 println("PorowavesStokes 3D")
 println("="^60)
-results_pw3d = []
 for nx in res_pw3d
 # default: [64,128,256,512]  |  override: BENCH_RES_PW3D=16,32,64,128
     @printf "--- nx=%d ---\n" nx; flush(stdout)
     r = PW3D.main(nx=nx, nt=1, backend=backend, bench=true, do_plot=false, verbose=false)
     push!(results_pw3d, (nx=nx, r...))
 end
+end  # pw3d
 
 # ─────────────────────────────────────────────────────────
 # Summary table
