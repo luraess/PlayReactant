@@ -1,5 +1,5 @@
 using LinearAlgebra, Statistics, Printf
-using CairoMakie
+#using CairoMakie
 using Reactant
 
 include("reactant_helpers.jl")

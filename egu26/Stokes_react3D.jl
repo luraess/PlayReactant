@@ -1,5 +1,5 @@
 using Printf
-using CairoMakie
+#using CairoMakie
 using Reactant
 
 include("reactant_helpers.jl")
