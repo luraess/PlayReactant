@@ -1,35 +1,9 @@
 using Printf
-using CairoMakie
+#using CairoMakie
 using Reactant
 
-const _CUDA_functional = try
-    using CUDA
-    CUDA.functional()
-catch
-    false
-end
+include("reactant_helpers.jl")
 
-# backend init
-function init_backend(backend::Symbol=:auto)
-    resolved = if backend === :auto
-        _CUDA_functional ? :gpu : :cpu
-    else
-        backend
-    end
-    if resolved !== :none
-        Reactant.set_default_backend(resolved === :gpu ? "gpu" : "cpu")
-        @info "Reactant backend: $resolved"
-        return resolved, Reactant.ConcreteRArray, Reactant.ConcreteRNumber
-    else
-        @info "Plain Julia backend"
-        return resolved, identity, identity
-    end
-end
-
-# helper functions
-to_scalar(x::Union{AbstractFloat, Integer}) = x
-to_scalar(x) = Reactant.to_number(x)
-# face-to-centre averages (3D: one dim at a time)
 @views avx(A) = @. 0.5 * (A[1:end-1, :, :] + A[2:end, :, :])
 @views avy(A) = @. 0.5 * (A[:, 1:end-1, :] + A[:, 2:end, :])
 @views avz(A) = @. 0.5 * (A[:, :, 1:end-1] + A[:, :, 2:end])
@@ -113,7 +87,7 @@ function solve3D(Pt, Vxs, Vys, Vzs,
     return iter, err
 end
 
-function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
+function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true, bench=false)
     resolved, CRArray, CRNumber = init_backend(backend)
     use_reactant = resolved !== :none
     # physics — pure shear in xz plane, y is the neutral axis
@@ -184,6 +158,12 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
     iter    = CRNumber(0)
     err     = CRNumber(10tol)
     err_log = CRArray(zeros(maxiter ÷ nout))
+    _arrs   = (Pt, Vxs, Vys, Vzs, τxx, τyy, τzz, τxy, τxz, τyz,
+               ∇Vs, RVx, RVy, RVz, Rτxx, Rτyy, Rτzz, Rτxy, Rτxz, Rτyz,
+               ηs, ηs_xy, ηs_xz, ηs_yz)
+    A_bytes = sum(A -> length(A) * sizeof(eltype(A)), _arrs)
+    n_arr   = length(_arrs)
+    t_compile = 0.0; t_run = 0.0
 
     # visualisation init — xz mid-plane slices (j = ny÷2)
     if do_plot
@@ -234,6 +214,12 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
         @printf "  run: %.3f s\n" t_run
     end
     @printf "  converged: iter/nz=%d, err=%1.3e\n" to_scalar(iter) ÷ nz to_scalar(err)
+    if bench
+        niter = to_scalar(iter)
+        T_eff = 2 * A_bytes * 1e-9 * niter / t_run
+        @printf "  T_eff=%.2f GB/s  (nx=%d, %d arrays, niter=%d)\n" T_eff nx n_arr niter
+        return (; t_compile, t_run, niter, T_eff)
+    end
     if verbose
         for (i, e) in enumerate(Array(err_log))
             e == 0 && break
@@ -253,5 +239,5 @@ function main(; nx=64, ny=64, nz=64, backend=:auto, verbose=true, do_plot=true)
     return
 end
 
-res = 256
-main(nx=res, ny=res, nz=res, backend=:gpu, verbose=false, do_plot=true)
+res = 128
+isdefined(Main, :_bench_sweep) || main(nx=res, ny=res, nz=res, backend=:auto, verbose=false, do_plot=true)
